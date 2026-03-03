@@ -80,6 +80,38 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 .flash{animation:flash-val .7s ease;}
 @keyframes flash-val{0%{opacity:1;filter:brightness(3);}40%{opacity:.5;}100%{opacity:1;filter:brightness(1);}}
 
+/* ── SCAN LINES ── */
+#scanLines{position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:50;opacity:1;}
+
+/* ── THEME SWEEP ── */
+#themeSweep{
+  position:fixed;top:0;left:-100vw;width:100vw;height:100vh;
+  pointer-events:none;z-index:60;
+  background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.18) 50%,transparent 100%);
+  transition:none;
+}
+#themeSweep.sweeping{animation:sweep-anim .45s ease-out forwards;}
+@keyframes sweep-anim{0%{left:-100vw;}100%{left:100vw;}}
+
+/* ── GPS LOCK PULSE ── */
+#gpsRipple{position:fixed;bottom:36px;left:18px;width:0;height:0;pointer-events:none;z-index:15;}
+.ripple-ring{
+  position:absolute;border-radius:50%;border:1.5px solid var(--c);
+  animation:ripple-out .9s ease-out forwards;transform:translate(-50%,-50%);
+}
+@keyframes ripple-out{
+  0%{width:0;height:0;opacity:.9;}
+  100%{width:120px;height:120px;opacity:0;}
+}
+
+/* ── THREAT PANEL ── */
+#threatPanel{margin-top:4px;}
+.threat-hdr{font-size:.5rem;font-weight:900;font-family:'Orbitron',monospace;letter-spacing:.2em;color:var(--c);opacity:.5;}
+.threat-val{font-family:'Orbitron',monospace;font-size:.72rem;font-weight:900;letter-spacing:.1em;margin-top:1px;}
+.threat-bar-wrap{width:90px;height:3px;background:rgba(255,255,255,.06);border:1px solid var(--c);overflow:hidden;margin-top:2px;opacity:.6;}
+.threat-bar-fill{height:100%;transition:width .8s ease;}
+.threat-sub{font-size:.48rem;font-weight:700;color:var(--c);opacity:.5;letter-spacing:.1em;margin-top:2px;}
+
 .alerts{position:fixed;top:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:3px;align-items:center;z-index:20;pointer-events:none;}
 .alert{font-size:.52rem;font-weight:700;letter-spacing:.16em;padding:.15rem .55rem;border:1px solid;text-transform:uppercase;animation:alert-in .25s ease both;}
 .alert.ok   {border-color:rgba(118,255,3,.4);color:#76ff03;}
@@ -141,6 +173,10 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 <canvas id="hudMirror" width="180" height="90"></canvas>
 <canvas id="hud2d" width="900" height="450"></canvas>
 
+<canvas id="scanLines"></canvas>
+<div id="themeSweep"></div>
+<div id="gpsRipple"></div>
+
 <div class="corner tl"></div><div class="corner tr"></div>
 <div class="corner bl"></div><div class="corner br"></div>
 
@@ -162,6 +198,12 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
   <div class="loc-row"><div class="lloc">LAT</div><div class="lval" id="latV">--</div></div>
   <div class="loc-row"><div class="lloc">LON</div><div class="lval" id="lonV">--</div></div>
   <div class="gps-status acquiring" id="gpsS">● GPS ACQUIRING</div>
+  <div id="threatPanel" style="display:none">
+    <div class="threat-hdr">THREAT LEVEL</div>
+    <div class="threat-val" id="threatVal">--</div>
+    <div class="threat-bar-wrap"><div class="threat-bar-fill" id="threatBar" style="width:0%"></div></div>
+    <div class="threat-sub" id="threatSub">ACQUIRING DATA</div>
+  </div>
 </div>
 
 <div id="poiPanel"></div>
@@ -233,6 +275,7 @@ function setTheme(name,btn){
   document.body.className='theme-'+name;
   document.querySelectorAll('.tpBtn').forEach(function(b){b.classList.remove('active');});
   if(btn) btn.classList.add('active');
+  themeSweep();
 }
 function TC(){return THEMES[currentTheme].c;}
 function TC2(){return THEMES[currentTheme].c2;}
@@ -251,6 +294,10 @@ var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','D
 var GPS_TIMEOUT=60000,GPS_RETRY_DELAY=5000,gpsRetryTimer=null,gpsAttempts=0,GPS_MAX_ATTEMPTS=10;
 var poiData=[];
 var cpuSamples=[];
+var lastGpsState=''; // for GPS lock pulse detection
+var threatFetched=false;
+/* glitch chars */
+var GLITCH_CHARS='!@#$%^&*<>?/\\|[]{}01';
 
 /* ── NV AUTO STATE ── */
 var nvActive=false,nvStream=null,nvVideo=null,nvCanvas=null,nvCtx=null;
@@ -263,6 +310,7 @@ var NV_DARK_THRESH=55,NV_LIGHT_THRESH=90;
 /* ── BOOT ── */
 window.addEventListener('DOMContentLoaded',function(){
   startClock(); startBattery(); startGPS(); startSysStats(); startNetwork();
+  startScanLines();
   nvCanvas=document.createElement('canvas'); nvCanvas.width=32; nvCanvas.height=32;
   nvCtx=nvCanvas.getContext('2d',{willReadFrequently:true});
   if(isIOS) document.getElementById('permBtn').style.display='block';
@@ -280,9 +328,34 @@ function startClock(){
 }
 function p(n){return String(n).padStart(2,'0');}
 
-/* ── FLASH ── */
+/* ── FLASH + GLITCH ── */
 function flashEl(el){if(!el)return;el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
-function setVal(id,val){var el=document.getElementById(id);if(!el)return;if(el.textContent!==String(val)){el.textContent=val;flashEl(el);}}
+
+var glitchTimers={};
+function setVal(id,val){
+  var el=document.getElementById(id);
+  if(!el)return;
+  var strVal=String(val);
+  if(el.textContent===strVal)return;
+  // Cancel any in-progress glitch
+  if(glitchTimers[id]){clearInterval(glitchTimers[id]);delete glitchTimers[id];}
+  var target=strVal, len=Math.max(target.length,2), frames=0, maxFrames=8;
+  glitchTimers[id]=setInterval(function(){
+    frames++;
+    if(frames>=maxFrames){
+      clearInterval(glitchTimers[id]); delete glitchTimers[id];
+      el.textContent=target; flashEl(el); return;
+    }
+    // Scramble — progressively reveal from left
+    var revealed=Math.floor((frames/maxFrames)*len);
+    var out='';
+    for(var i=0;i<len;i++){
+      if(i<revealed) out+=target[i]||'';
+      else out+=GLITCH_CHARS[Math.floor(Math.random()*GLITCH_CHARS.length)];
+    }
+    el.textContent=out;
+  },30);
+}
 
 /* ── BATTERY ── */
 function startBattery(){
@@ -389,6 +462,13 @@ function doWatch(){
 function setGPS(msg,cls){
   var el=document.getElementById('gpsS');
   el.textContent='● GPS '+msg; el.className='gps-status '+cls;
+  if(cls==='locked'&&lastGpsState!=='locked'){
+    lastGpsState='locked';
+    fireGPSLockPulse();
+    if(!threatFetched){threatFetched=true; setTimeout(fetchThreat,1500);}
+  } else if(cls!=='locked'){
+    lastGpsState=cls;
+  }
 }
 
 /* ── REVERSE GEOCODE ── */
@@ -496,6 +576,139 @@ function fetchWeather(){
 function aqiInfo(v){if(v<=20)return{label:'GOOD',color:'#76ff03'};if(v<=40)return{label:'FAIR',color:'#76ff03'};if(v<=60)return{label:'MODERATE',color:'#ff6d00'};if(v<=80)return{label:'POOR',color:'#ff6d00'};if(v<=100)return{label:'VERY POOR',color:'#ff1744'};return{label:'HAZARDOUS',color:'#ff1744'};}
 function pollenInfo(v){if(v<=10)return{label:'LOW',color:'#76ff03'};if(v<=30)return{label:'MODERATE',color:'#ff6d00'};if(v<=50)return{label:'HIGH',color:'#ff6d00'};return{label:'VERY HIGH',color:'#ff1744'};}
 function wCode(c){if(c===0)return'CLEAR';if(c<=2)return'PARTLY CLOUDY';if(c<=3)return'OVERCAST';if(c<=49)return'FOG';if(c<=59)return'DRIZZLE';if(c<=69)return'RAIN';if(c<=79)return'SNOW';if(c<=82)return'SHOWERS';if(c<=99)return'STORM';return'--';}
+
+/* ── SCAN LINES ── */
+function startScanLines(){
+  var cvs=document.getElementById('scanLines');
+  if(!cvs)return;
+  var ctx=cvs.getContext('2d');
+  var sweepY=0, sweepSpeed=1.2;
+  function frame(){
+    requestAnimationFrame(frame);
+    var W=window.innerWidth, H=window.innerHeight;
+    if(cvs.width!==W||cvs.height!==H){cvs.width=W;cvs.height=H;}
+    ctx.clearRect(0,0,W,H);
+    var C=TC();
+    // Static horizontal scan lines every 4px
+    ctx.strokeStyle=C;
+    for(var y=0;y<H;y+=4){
+      ctx.globalAlpha=0.028;
+      ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+    }
+    // Moving brighter sweep line
+    sweepY+=sweepSpeed;
+    if(sweepY>H+60) sweepY=-60;
+    var grad=ctx.createLinearGradient(0,sweepY-30,0,sweepY+30);
+    grad.addColorStop(0,'transparent');
+    grad.addColorStop(0.5,C);
+    grad.addColorStop(1,'transparent');
+    ctx.strokeStyle=grad;ctx.globalAlpha=0.07;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(0,sweepY);ctx.lineTo(W,sweepY);ctx.stroke();
+    ctx.globalAlpha=1;ctx.lineWidth=1;
+  }
+  frame();
+}
+
+/* ── THEME SWEEP ── */
+function themeSweep(){
+  var el=document.getElementById('themeSweep');
+  if(!el)return;
+  el.classList.remove('sweeping');
+  void el.offsetWidth;
+  el.classList.add('sweeping');
+}
+
+/* ── GPS LOCK PULSE ── */
+function fireGPSLockPulse(){
+  var wrap=document.getElementById('gpsRipple');
+  if(!wrap)return;
+  wrap.innerHTML='';
+  for(var i=0;i<3;i++){
+    (function(delay){
+      setTimeout(function(){
+        var ring=document.createElement('div');
+        ring.className='ripple-ring';
+        wrap.appendChild(ring);
+        setTimeout(function(){ring.remove();},900);
+      },delay);
+    })(i*220);
+  }
+  addAlert('GPS LOCKED','ok');
+}
+
+/* ── THREAT ASSESSMENT ── */
+function fetchThreat(){
+  if(lat==null)return;
+  document.getElementById('threatPanel').style.display='block';
+  document.getElementById('threatSub').textContent='SCANNING...';
+
+  var score=0, factors=[], done=0, needed=2;
+
+  function tryFinish(){
+    done++;
+    if(done<needed)return;
+    // Clamp final score
+    score=Math.min(10,Math.max(1,Math.round(score)));
+    var col=score<=3?'#76ff03':score<=5?'#ffb300':score<=7?'#ff6d00':'#ff1744';
+    var label=score<=3?'LOW':score<=5?'MODERATE':score<=7?'HIGH':'CRITICAL';
+    var tv=document.getElementById('threatVal');
+    var tb=document.getElementById('threatBar');
+    tv.textContent=label+' '+score+'/10';
+    tv.style.color=col;
+    tb.style.width=(score/10*100)+'%';
+    tb.style.background=col;
+    tb.style.boxShadow='0 0 6px '+col;
+    document.getElementById('threatSub').textContent=factors.slice(0,3).join(' · ');
+    if(score>=7) addAlert('THREAT: '+label,'danger');
+    else if(score>=5) addAlert('THREAT: '+label,'warn');
+  }
+
+  // ── Factor 1: Environmental (weather + AQI — already in DOM) ──
+  setTimeout(function(){
+    var envScore=0;
+    var wc=document.getElementById('wCond').textContent;
+    var envMap={'STORM':3,'SNOW':2,'SHOWERS':1.5,'RAIN':1,'DRIZZLE':0.5,'FOG':1};
+    envScore+=(envMap[wc]||0);
+    var aqiEl=document.getElementById('wAqi');
+    if(aqiEl&&aqiEl.textContent!=='--'){
+      var aqi=parseInt(aqiEl.textContent)||0;
+      if(aqi>80)envScore+=2; else if(aqi>60)envScore+=1.5; else if(aqi>40)envScore+=0.5;
+    }
+    // Time of day factor
+    var hr=new Date().getHours();
+    if(hr>=23||hr<5){envScore+=1.5;factors.push('NIGHT');}
+    else if(hr<7||hr>=21){envScore+=0.5;}
+    if(wc!=='--'&&wc!=='CLEAR'&&wc!=='PARTLY CLOUDY') factors.push('WX:'+wc);
+    score+=envScore;
+    tryFinish();
+  },100);
+
+  // ── Factor 2: Crime data via UK Police API (global fallback = POI density) ──
+  // Try UK Police API first (free, no key)
+  var crimeUrl='https://data.police.uk/api/crimes-street/all-crime?lat='+lat+'&lng='+lon;
+  fetch(crimeUrl)
+  .then(function(r){
+    if(!r.ok) throw new Error('not uk');
+    return r.json();
+  })
+  .then(function(crimes){
+    var count=Array.isArray(crimes)?crimes.length:0;
+    // Normalize: 0 crimes=0, 50+=4 points
+    var crimeScore=Math.min(4, count/12);
+    score+=crimeScore;
+    if(count>0) factors.push(count+' CRIMES/MI');
+    if(count>30) factors.push('HIGH CRIME');
+    else if(count>15) factors.push('MOD CRIME');
+    tryFinish();
+  })
+  .catch(function(){
+    // Fallback: use POI density as urban proxy (more POIs = more activity = slight baseline)
+    var urban=poiData.length;
+    score+=(urban>4?0.5:0); // mild urban bonus only
+    factors.push('NO CRIME DATA');
+    tryFinish();
+  });
+}
 
 /* ── ALERTS ── */
 function addAlert(msg,type){
@@ -661,6 +874,7 @@ function setNvLight(name,btn){
 function applyThemeNV(name){
   currentTheme=name;
   document.body.className='theme-'+name;
+  themeSweep();
 }
 
 async function toggleNV(){
