@@ -678,99 +678,274 @@ function mat4Scale(x,y,z){var m=mat4Identity();m[0]=x;m[5]=y;m[10]=z;return m;}
 
 function drawHud2D(){
   var w=hudCanvas.width,h=hudCanvas.height;
-  hudCtx.clearRect(0,0,w,h);
-  hudCtx.save();
-  hudCtx.globalAlpha=0.88;
-  var g=hudCtx.createLinearGradient(0,0,w,0);
-  g.addColorStop(0,'rgba(0,229,255,0.14)');g.addColorStop(0.5,'rgba(0,0,0,0.03)');g.addColorStop(1,'rgba(0,229,255,0.14)');
-  hudCtx.fillStyle=g;rr(hudCtx,18,18,w-36,h-36,22);hudCtx.fill();hudCtx.restore();
-  hudCtx.save();hudCtx.strokeStyle='rgba(0,229,255,0.72)';hudCtx.lineWidth=2.5;rr(hudCtx,18,18,w-36,h-36,22);hudCtx.stroke();hudCtx.restore();
-  hudCtx.save();hudCtx.globalAlpha=0.05;hudCtx.fillStyle='#00e5ff';
-  for(var y=18;y<h-18;y+=4) hudCtx.fillRect(18,y,w-36,1);
-  hudCtx.restore();
-  var d=new Date(),timeStr=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
-  hudCtx.save();hudCtx.fillStyle='rgba(0,229,255,0.95)';hudCtx.shadowColor='rgba(0,229,255,0.55)';hudCtx.shadowBlur=12;
-  hudCtx.font='900 38px Orbitron,monospace';hudCtx.fillText('JARVIS',52,72);
-  hudCtx.font='800 40px Orbitron,monospace';hudCtx.fillText(timeStr,52,126);
-  hudCtx.shadowBlur=0;hudCtx.font='700 18px "Share Tech Mono",monospace';hudCtx.fillStyle='rgba(0,229,255,0.65)';
-  hudCtx.fillText(DAYS[d.getDay()]+' '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear(),52,154);hudCtx.restore();
-  var hdg=heading||0,dir=dirFromHeading(hdg);
-  hudCtx.save();hudCtx.fillStyle='rgba(0,229,255,0.92)';hudCtx.shadowColor='rgba(0,229,255,0.55)';hudCtx.shadowBlur=12;
-  hudCtx.font='900 56px Orbitron,monospace';hudCtx.fillText(dir+' '+pad3(hdg)+'°',w/2-190,118);hudCtx.restore();
+  var C='#00e5ff',C2='#ff6d00',C3='#76ff03',CR='#ff1744';
+  var ctx=hudCtx;
+  ctx.clearRect(0,0,w,h);
+
+  // ── background + scanlines ──
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.92)';ctx.fillRect(0,0,w,h);
+  ctx.globalAlpha=0.04;ctx.fillStyle=C;
+  for(var sy=0;sy<h;sy+=4) ctx.fillRect(0,sy,w,1);
+  ctx.restore();
+
+  // ── vignette ──
+  ctx.save();
+  var vig=ctx.createRadialGradient(w/2,h/2,h*0.3,w/2,h/2,h*0.85);
+  vig.addColorStop(0,'rgba(0,0,0,0)');vig.addColorStop(1,'rgba(0,0,0,0.6)');
+  ctx.fillStyle=vig;ctx.fillRect(0,0,w,h);ctx.restore();
+
+  // ── outer frame ──
+  ctx.save();ctx.strokeStyle='rgba(0,229,255,0.07)';ctx.lineWidth=1;ctx.strokeRect(1,1,w-2,h-2);ctx.restore();
+
+  // ── corner brackets ──
+  var cs=50,ct=14,cl=14;
+  ctx.save();ctx.strokeStyle='rgba(0,229,255,0.45)';ctx.lineWidth=1.5;
+  [[cl,ct,1,1],[w-cl,ct,-1,1],[cl,h-ct,1,-1],[w-cl,h-ct,-1,-1]].forEach(function(c){
+    ctx.beginPath();ctx.moveTo(c[0],c[1]+c[3]*cs);ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0]+c[2]*cs,c[1]);ctx.stroke();
+  });ctx.restore();
+
+  function glow(color,blur){ctx.shadowColor=color;ctx.shadowBlur=blur;}
+  function noglow(){ctx.shadowBlur=0;ctx.shadowColor='transparent';}
+
+  var d=new Date();
+  var timeStr=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+  var dateStr=DAYS[d.getDay()]+' '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear();
+
+  // ── COMPASS (top center) ──
+  ctx.save();
+  var cbx=w/2-160,cby=20,cbw=320,cbh=26;
+  ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(cbx,cby,cbw,cbh);
+  ctx.strokeStyle='rgba(0,229,255,0.18)';ctx.lineWidth=1;ctx.strokeRect(cbx,cby,cbw,cbh);
+  ctx.clip();
+  // draw compass ticks
+  var hdg=((heading||0)%360+360)%360;
+  var tickW=28/5; // px per degree
+  ctx.font='bold 11px "Share Tech Mono",monospace';
+  for(var deg=-90;deg<=90;deg++){
+    var d2=((hdg+deg)%360+360)%360;
+    var px=cbx+cbw/2+deg*tickW*5;
+    var card=CARDS[d2];
+    if(card){
+      glow(C,8);
+      ctx.fillStyle=(d2===180||d2===270)?C2:C;
+      ctx.font='bold 13px Orbitron,monospace';
+      ctx.fillText(card,px-ctx.measureText(card).width/2,cby+17);
+    } else if(d2%30===0){
+      noglow();ctx.fillStyle='rgba(0,229,255,0.4)';
+      ctx.font='10px "Share Tech Mono",monospace';
+      ctx.fillText(d2,px-ctx.measureText(String(d2)).width/2,cby+16);
+    } else if(d2%5===0){
+      noglow();ctx.fillStyle='rgba(0,229,255,0.2)';
+      ctx.font='9px "Share Tech Mono",monospace';
+      ctx.fillText('·',px,cby+16);
+    }
+  }
+  noglow();ctx.restore();
+  // compass pin
+  ctx.save();glow(C,8);
+  ctx.strokeStyle=C;ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(w/2,cby);ctx.lineTo(w/2,cby+cbh);ctx.stroke();
+  ctx.fillStyle=C;ctx.font='8px monospace';ctx.fillText('▼',w/2-4,cby-1);
+  noglow();ctx.restore();
+  // HDG text under compass
+  ctx.save();glow(C,6);
+  ctx.fillStyle='rgba(0,229,255,0.7)';ctx.font='bold 12px Orbitron,monospace';ctx.letterSpacing='.2em';
+  var hdgStr='HDG '+pad3(hdg)+'°';
+  ctx.fillText(hdgStr,w/2-ctx.measureText(hdgStr).width/2,cby+cbh+16);
+  noglow();ctx.restore();
+
+  // ── TOP LEFT: clock + speed ──
+  ctx.save();
+  glow(C,12);ctx.fillStyle=C;ctx.font='700 30px Orbitron,monospace';ctx.fillText(timeStr,20,62);
+  noglow();ctx.fillStyle='rgba(0,229,255,0.5)';ctx.font='11px "Share Tech Mono",monospace';ctx.fillText(dateStr,20,80);
   var kmh=speed*3.6;
-  hudCtx.save();hudCtx.fillStyle='rgba(118,255,3,0.95)';hudCtx.shadowColor='rgba(118,255,3,0.55)';hudCtx.shadowBlur=10;
-  hudCtx.font='900 44px Orbitron,monospace';hudCtx.fillText((isFinite(kmh)?kmh.toFixed(1):'0.0')+' KM/H',52,220);
-  hudCtx.shadowBlur=0;hudCtx.fillStyle='rgba(255,109,0,0.90)';hudCtx.font='800 22px "Share Tech Mono",monospace';
-  hudCtx.fillText('G: '+(isFinite(lastG)?lastG.toFixed(2):'1.00'),52,252);hudCtx.restore();
-  hudCtx.save();hudCtx.fillStyle='rgba(0,229,255,0.85)';hudCtx.font='800 22px "Share Tech Mono",monospace';
-  hudCtx.fillText('LAT '+(lat!=null?lat.toFixed(6):'ACQUIRING'),52,h-104);
-  hudCtx.fillText('LON '+(lon!=null?lon.toFixed(6):'ACQUIRING'),52,h-76);hudCtx.restore();
-  hudCtx.save();
-  var bx=w-360,by=62;
-  function bar(lbl,pct,color){
-    hudCtx.fillStyle='rgba(0,229,255,0.55)';hudCtx.font='800 18px Orbitron,monospace';hudCtx.fillText(lbl,bx,by);
-    hudCtx.fillStyle='rgba(0,229,255,0.18)';hudCtx.fillRect(bx+50,by-14,160,8);
-    hudCtx.fillStyle=color;hudCtx.fillRect(bx+50,by-14,160*clamp(pct,0,100)/100,8);
-    hudCtx.fillStyle='rgba(0,229,255,0.90)';hudCtx.font='800 18px "Share Tech Mono",monospace';
-    hudCtx.fillText(Math.round(pct)+'%',bx+220,by);by+=28;
+  glow(C3,10);ctx.fillStyle=C3;ctx.font='700 22px Orbitron,monospace';ctx.fillText((isFinite(kmh)?kmh.toFixed(1):'0.0'),20,110);
+  noglow();ctx.fillStyle='rgba(118,255,3,0.45)';ctx.font='9px "Share Tech Mono",monospace';ctx.fillText('KM/H',20,124);
+  ctx.fillStyle=C2;ctx.font='11px "Share Tech Mono",monospace';ctx.fillText('G: '+(isFinite(lastG)?lastG.toFixed(2):'1.00'),20,142);
+  // GPS status
+  var gpsEl=document.getElementById('gpsStatus');
+  var gpsCls=gpsEl?gpsEl.className:'';
+  ctx.fillStyle=gpsCls.indexOf('locked')>-1?C3:gpsCls.indexOf('denied')>-1?CR:C2;
+  ctx.font='10px "Share Tech Mono",monospace';
+  ctx.fillText(gpsEl?gpsEl.textContent:'● GPS ACQUIRING',20,158);
+  ctx.restore();
+
+  // ── TOP RIGHT: stat bars ──
+  ctx.save();
+  var bx=w-220,by=30;
+  function statBar(lbl,pct,color){
+    ctx.fillStyle='rgba(0,229,255,0.35)';ctx.font='9px "Share Tech Mono",monospace';
+    ctx.fillText(lbl,bx,by);
+    ctx.fillStyle='rgba(0,229,255,0.07)';ctx.fillRect(bx+32,by-10,120,5);
+    ctx.strokeStyle='rgba(0,229,255,0.1)';ctx.lineWidth=1;ctx.strokeRect(bx+32,by-10,120,5);
+    ctx.fillStyle=color;ctx.fillRect(bx+32,by-10,120*clamp(pct,0,100)/100,5);
+    ctx.fillStyle='rgba(0,229,255,0.8)';ctx.font='10px "Share Tech Mono",monospace';
+    ctx.fillText(Math.round(pct)+'%',bx+158,by);
+    by+=20;
   }
-  bar('BAT',batPct,'rgba(118,255,3,0.90)');bar('SIG',90,'rgba(0,229,255,0.90)');
-  bar('CPU',fCPU,'rgba(255,109,0,0.90)');bar('MEM',fMem,'rgba(255,109,0,0.90)');
-  hudCtx.restore();
+  statBar('BAT',batPct,batPct>50?C3:batPct>20?C2:CR);
+  statBar('SIG',90,C);
+  statBar('CPU',fCPU,C2);
+  statBar('MEM',fMem,C2);
+  ctx.restore();
+
+  // ── WEATHER (right, under bars) ──
   if(weatherState.ok){
-    hudCtx.save();hudCtx.fillStyle='rgba(0,229,255,0.90)';hudCtx.shadowColor='rgba(0,229,255,0.45)';hudCtx.shadowBlur=8;
-    hudCtx.font='900 36px Orbitron,monospace';hudCtx.fillText(weatherState.temp+'°C',w-280,190);
-    hudCtx.shadowBlur=0;hudCtx.fillStyle='rgba(0,229,255,0.65)';hudCtx.font='800 18px Orbitron,monospace';
-    hudCtx.fillText(weatherState.cond,w-280,216);hudCtx.font='700 18px "Share Tech Mono",monospace';
-    hudCtx.fillText('WIND '+weatherState.windSpd+' km/h',w-280,244);
-    hudCtx.fillText('HUM  '+weatherState.hum+'%',w-280,268);
-    hudCtx.fillText('↑ '+weatherState.sunrise+'  ↓ '+weatherState.sunset,w-280,292);hudCtx.restore();
+    ctx.save();
+    var wx=w-220,wy=by+14;
+    ctx.strokeStyle='rgba(0,229,255,0.12)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(wx-8,wy-8);ctx.lineTo(wx-8,wy+90);ctx.stroke();
+    glow(C,10);ctx.fillStyle=C;ctx.font='700 26px Orbitron,monospace';ctx.fillText(weatherState.temp+'°C',wx,wy+22);
+    noglow();ctx.fillStyle='rgba(0,229,255,0.5)';ctx.font='10px "Share Tech Mono",monospace';
+    ctx.fillText(weatherState.cond,wx,wy+38);
+    ctx.fillStyle='rgba(0,229,255,0.38)';ctx.font='10px "Share Tech Mono",monospace';
+    ctx.fillText('WIND '+weatherState.windSpd+' km/h',wx,wy+54);
+    ctx.fillText('HUM  '+weatherState.hum+'%',wx,wy+68);
+    ctx.fillText('↑ '+weatherState.sunrise+' · ↓ '+weatherState.sunset,wx,wy+82);
+    ctx.restore();
   }
-  var t=5+personCount*15+((lastG>1.5)?Math.min((lastG-1)*20,30):0)+((speed*3.6>20)?10:0);
-  t=clamp(t,0,100);
-  hudCtx.save();hudCtx.fillStyle='rgba(0,229,255,0.20)';hudCtx.fillRect(52,h-168,240,12);
-  var tc=(t<20)?'rgba(118,255,3,0.90)':(t<50)?'rgba(0,229,255,0.90)':(t<75)?'rgba(255,109,0,0.90)':'rgba(255,23,68,0.90)';
-  hudCtx.fillStyle=tc;hudCtx.fillRect(52,h-168,240*(t/100),12);
-  hudCtx.fillStyle='rgba(0,229,255,0.70)';hudCtx.font='800 18px Orbitron,monospace';
-  hudCtx.fillText('THREAT '+Math.round(t)+'%',52,h-178);hudCtx.restore();
-  if(detTop&&detTop.length){
-    hudCtx.save();hudCtx.fillStyle='rgba(0,229,255,0.70)';hudCtx.font='800 18px Orbitron,monospace';
-    hudCtx.fillText('DETECTIONS',w-280,h/2-80);var yy=h/2-50;
-    detTop.slice(0,6).forEach(function(p){
-      hudCtx.fillStyle=p.isPerson?'rgba(255,23,68,0.95)':'rgba(0,229,255,0.85)';
-      hudCtx.font='700 18px "Share Tech Mono",monospace';
-      hudCtx.fillText((p.isPerson?'👤 ':'◈ ')+String(p.cls).toUpperCase()+' '+p.conf+'%',w-280,yy);yy+=22;
-    });hudCtx.restore();
-  }
-  if(alertsState.length){
-    hudCtx.save();var ax=w/2-220,ay=160;
-    alertsState.slice(0,3).forEach(function(a,i){
-      var col=a.type==='ok'?'rgba(118,255,3,0.95)':a.type==='warn'?'rgba(255,109,0,0.95)':a.type==='danger'?'rgba(255,23,68,0.95)':'rgba(0,229,255,0.92)';
-      hudCtx.fillStyle='rgba(0,0,0,0.55)';hudCtx.fillRect(ax,ay+i*28,440,22);
-      hudCtx.strokeStyle=col;hudCtx.strokeRect(ax,ay+i*28,440,22);
-      hudCtx.fillStyle=col;hudCtx.font='800 16px Orbitron,monospace';
-      hudCtx.fillText(a.msg,ax+10,ay+16+i*28);
-    });hudCtx.restore();
-  }
-  hudCtx.save();var mx=w-240,my=h-170,rv=70;
-  hudCtx.strokeStyle='rgba(0,229,255,0.45)';hudCtx.lineWidth=2;
-  hudCtx.beginPath();hudCtx.arc(mx,my,rv,0,Math.PI*2);hudCtx.stroke();
-  hudCtx.globalAlpha=0.35;
-  hudCtx.beginPath();hudCtx.arc(mx,my,rv*0.66,0,Math.PI*2);hudCtx.stroke();
-  hudCtx.beginPath();hudCtx.arc(mx,my,rv*0.33,0,Math.PI*2);hudCtx.stroke();
-  hudCtx.globalAlpha=1;
-  var ang=(heading||0)*Math.PI/180;
-  hudCtx.strokeStyle='rgba(0,229,255,0.9)';
-  hudCtx.beginPath();hudCtx.moveTo(mx,my);hudCtx.lineTo(mx+Math.sin(ang)*rv,my-Math.cos(ang)*rv);hudCtx.stroke();
+
+  // ── HORIZON (center) ──
+  ctx.save();
+  var hcx=w/2,hcy=h/2;
+  // horizon lines
+  ctx.strokeStyle='rgba(0,229,255,0.28)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(hcx-120,hcy);ctx.lineTo(hcx-14,hcy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(hcx+14,hcy);ctx.lineTo(hcx+120,hcy);ctx.stroke();
+  // center diamond
+  glow(C,10);ctx.strokeStyle=C;ctx.lineWidth=1;
+  ctx.save();ctx.translate(hcx,hcy);ctx.rotate(Math.PI/4);ctx.strokeRect(-5,-5,10,10);ctx.restore();
+  noglow();
+  // pitch marks
+  [-60,-30,30,60].forEach(function(off){
+    var lbl=off<0?String(off/6)+'°':'+'+String(off/6)+'°';
+    ctx.strokeStyle='rgba(0,229,255,0.15)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(hcx-44,hcy+off);ctx.lineTo(hcx+44,hcy+off);ctx.stroke();
+    ctx.fillStyle='rgba(0,229,255,0.3)';ctx.font='8px "Share Tech Mono",monospace';
+    ctx.fillText(lbl,hcx+48,hcy+off+3);
+  });
+  ctx.restore();
+
+  // ── BOTTOM LEFT: coords ──
+  ctx.save();
+  ctx.fillStyle='rgba(0,229,255,0.35)';ctx.font='9px "Share Tech Mono",monospace';ctx.fillText('LAT',20,h-54);ctx.fillText('LON',20,h-36);
+  ctx.fillStyle=C;ctx.font='12px "Share Tech Mono",monospace';
+  ctx.fillText(lat!=null?lat.toFixed(6)+'°':'ACQUIRING',50,h-54);
+  ctx.fillText(lon!=null?lon.toFixed(6)+'°':'ACQUIRING',50,h-36);
+  // status dot
+  ctx.fillStyle=C3;ctx.beginPath();ctx.arc(20,h-20,3,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(0,229,255,0.25)';ctx.font='9px "Share Tech Mono",monospace';ctx.fillText('ALL SYSTEMS NOMINAL',30,h-17);
+  ctx.restore();
+
+  // ── BOTTOM CENTER: big heading ──
+  ctx.save();
+  glow(C,10);ctx.fillStyle=C;ctx.font='700 20px Orbitron,monospace';
+  var dirStr=dirFromHeading(hdg);
+  ctx.fillText(dirStr,w/2-ctx.measureText(dirStr).width/2,h-38);
+  noglow();ctx.fillStyle='rgba(0,229,255,0.4)';ctx.font='10px "Share Tech Mono",monospace';
+  var degStr=pad3(hdg)+'°';
+  ctx.fillText(degStr,w/2-ctx.measureText(degStr).width/2,h-22);
+  ctx.restore();
+
+  // ── BOTTOM RIGHT: minimap radar ──
+  ctx.save();
+  var mx=w-100,my=h-110,rv=80;
+  // label
+  ctx.fillStyle='rgba(0,229,255,0.28)';ctx.font='9px "Share Tech Mono",monospace';ctx.fillText('TACTICAL · LIVE MAP',mx-rv,my-rv-10);
+  // rings
+  ctx.strokeStyle='rgba(0,229,255,0.22)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(mx,my,rv,0,Math.PI*2);ctx.stroke();
+  ctx.globalAlpha=0.35;
+  ctx.beginPath();ctx.arc(mx,my,rv*0.66,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.arc(mx,my,rv*0.33,0,Math.PI*2);ctx.stroke();
+  ctx.globalAlpha=1;
+  // heading line
+  var ang=(hdg)*Math.PI/180;
+  glow(C,6);ctx.strokeStyle=C;ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(mx,my);ctx.lineTo(mx+Math.sin(ang)*rv,my-Math.cos(ang)*rv);ctx.stroke();
+  noglow();
+  // self dot
+  ctx.fillStyle=C;glow(C,8);ctx.beginPath();ctx.arc(mx,my,4,0,Math.PI*2);ctx.fill();noglow();
+  // pulse ring
+  ctx.strokeStyle='rgba(0,229,255,0.35)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(mx,my,10,0,Math.PI*2);ctx.stroke();
+  // waypoints
   if(lat!=null&&waypoints.length){
     waypoints.slice(-6).forEach(function(wp){
       var db=dist(lat,lon,wp.lat,wp.lon),br=bearing(lat,lon,wp.lat,wp.lon);
-      var rel=((br-heading+540)%360)-180,r0=Math.min(rv,(db/500)*rv),a2=rel*Math.PI/180;
-      hudCtx.fillStyle='rgba(255,109,0,0.95)';hudCtx.beginPath();hudCtx.arc(mx+Math.sin(a2)*r0,my-Math.cos(a2)*r0,4,0,Math.PI*2);hudCtx.fill();
+      var rel=((br-hdg+540)%360)-180,r0=Math.min(rv,(db/500)*rv),a2=rel*Math.PI/180;
+      ctx.fillStyle=C2;glow(C2,6);
+      ctx.beginPath();ctx.arc(mx+Math.sin(a2)*r0,my-Math.cos(a2)*r0,4,0,Math.PI*2);ctx.fill();noglow();
     });
   }
-  hudCtx.fillStyle='rgba(0,229,255,0.65)';hudCtx.font='800 14px Orbitron,monospace';
-  hudCtx.fillText('RADAR',mx-26,my-rv-10);hudCtx.restore();
+  ctx.restore();
+
+  // ── LEFT MIDDLE: waypoints ──
+  if(waypoints.length){
+    ctx.save();
+    var wy2=h/2-waypoints.slice(-4).length*22/2;
+    waypoints.slice(-4).forEach(function(wp){
+      var db=lat!=null?Math.round(dist(lat,lon,wp.lat,wp.lon))+'m':'---';
+      var br=lat!=null?Math.round(bearing(lat,lon,wp.lat,wp.lon))+'°':'---';
+      ctx.strokeStyle='rgba(255,109,0,0.5)';ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(18,wy2-2);ctx.lineTo(18,wy2+16);ctx.stroke();
+      ctx.fillStyle=C2;ctx.font='10px "Share Tech Mono",monospace';ctx.fillText(wp.name,26,wy2+8);
+      ctx.fillStyle='rgba(255,109,0,0.45)';ctx.font='9px "Share Tech Mono",monospace';ctx.fillText(db+' · '+br,26,wy2+20);
+      wy2+=32;
+    });
+    ctx.restore();
+  }
+
+  // ── RIGHT MIDDLE: detections ──
+  if(detTop&&detTop.length){
+    ctx.save();
+    var dy=h/2-detTop.length*20/2;
+    detTop.slice(0,6).forEach(function(p){
+      var col=p.isPerson?CR:C;
+      ctx.strokeStyle=p.isPerson?'rgba(255,23,68,0.6)':'rgba(0,229,255,0.28)';
+      ctx.fillStyle='rgba(0,0,0,0.5)';
+      ctx.fillRect(w-190,dy-12,175,16);
+      ctx.lineWidth=1;ctx.strokeRect(w-190,dy-12,175,16);
+      ctx.fillStyle=col;ctx.font='10px "Share Tech Mono",monospace';
+      ctx.fillText((p.isPerson?'👤 ':'◈ ')+p.cls.toUpperCase()+' '+p.conf+'%',w-184,dy);
+      dy+=22;
+    });
+    ctx.restore();
+  }
+
+  // ── LEFT: threat bar ──
+  ctx.save();
+  var t=5+personCount*15+((lastG>1.5)?Math.min((lastG-1)*20,30):0)+((speed*3.6>20)?10:0);
+  t=clamp(t,0,100);
+  var ty=h-195;
+  ctx.fillStyle='rgba(0,229,255,0.28)';ctx.font='9px "Share Tech Mono",monospace';ctx.fillText('THREAT LEVEL',20,ty);
+  ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(20,ty+4,130,6);
+  ctx.strokeStyle='rgba(0,229,255,0.1)';ctx.lineWidth=1;ctx.strokeRect(20,ty+4,130,6);
+  var tg=ctx.createLinearGradient(20,0,150,0);
+  tg.addColorStop(0,C3);tg.addColorStop(0.5,C2);tg.addColorStop(1,CR);
+  ctx.fillStyle=tg;ctx.fillRect(20,ty+4,130*(t/100),6);
+  var tlab=t<20?'MINIMAL':t<50?'ELEVATED':t<75?'HIGH':'CRITICAL';
+  var tcol=t<20?C3:t<50?C:t<75?C2:CR;
+  ctx.fillStyle=tcol;ctx.font='10px "Share Tech Mono",monospace';ctx.fillText(tlab,20,ty+22);
+  ctx.restore();
+
+  // ── CENTER: alerts ──
+  if(alertsState.length){
+    ctx.save();
+    var aay=h/2-90;
+    alertsState.slice(0,3).forEach(function(a){
+      var col=a.type==='ok'?C3:a.type==='warn'?C2:a.type==='danger'?CR:C;
+      var aw=320,aax=w/2-aw/2;
+      ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(aax,aay,aw,20);
+      ctx.strokeStyle=col.replace(')',',0.4)').replace('rgb','rgba');
+      ctx.lineWidth=1;ctx.strokeRect(aax,aay,aw,20);
+      ctx.fillStyle=col;ctx.font='bold 10px Orbitron,monospace';
+      ctx.fillText(a.msg,aax+8,aay+13);
+      aay+=26;
+    });
+    ctx.restore();
+  }
 }
 
 function compileShader(gl,type,src){var sh=gl.createShader(type);gl.shaderSource(sh,src);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){var i=gl.getShaderInfoLog(sh);gl.deleteShader(sh);throw new Error(i);}return sh;}
