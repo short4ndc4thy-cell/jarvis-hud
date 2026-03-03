@@ -298,6 +298,10 @@ var lastGpsState=''; // for GPS lock pulse detection
 var threatFetched=false;
 /* glitch chars */
 var GLITCH_CHARS='!@#$%^&*<>?/\\|[]{}01';
+/* 2D canvas FX state */
+var c2dSweepY=0;           // scan line sweep position in hud2d space
+var c2dThemeSweepX=-9999;  // theme wipe X position (-9999 = inactive)
+var c2dThemeSweeping=false;
 
 /* ── NV AUTO STATE ── */
 var nvActive=false,nvStream=null,nvVideo=null,nvCanvas=null,nvCtx=null;
@@ -593,6 +597,7 @@ function startScanLines(){
     ctx.strokeStyle=C;
     for(var y=0;y<H;y+=4){
       ctx.globalAlpha=0.028;
+      ctx.lineWidth=1.3;
       ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
     }
     // Moving brighter sweep line
@@ -602,7 +607,7 @@ function startScanLines(){
     grad.addColorStop(0,'transparent');
     grad.addColorStop(0.5,C);
     grad.addColorStop(1,'transparent');
-    ctx.strokeStyle=grad;ctx.globalAlpha=0.07;ctx.lineWidth=2;
+    ctx.strokeStyle=grad;ctx.globalAlpha=0.07;ctx.lineWidth=2.6;
     ctx.beginPath();ctx.moveTo(0,sweepY);ctx.lineTo(W,sweepY);ctx.stroke();
     ctx.globalAlpha=1;ctx.lineWidth=1;
   }
@@ -611,11 +616,12 @@ function startScanLines(){
 
 /* ── THEME SWEEP ── */
 function themeSweep(){
+  // DOM overlay (non-XR)
   var el=document.getElementById('themeSweep');
-  if(!el)return;
-  el.classList.remove('sweeping');
-  void el.offsetWidth;
-  el.classList.add('sweeping');
+  if(el){el.classList.remove('sweeping');void el.offsetWidth;el.classList.add('sweeping');}
+  // 2D canvas (XR)
+  c2dThemeSweepX=0;
+  c2dThemeSweeping=true;
 }
 
 /* ── GPS LOCK PULSE ── */
@@ -738,6 +744,22 @@ function drawHud2D(){
   function ga(a){ctx.globalAlpha=a;}
   function ga1(){ctx.globalAlpha=1;}
 
+  /* ── SCAN LINES (drawn first, under everything) ── */
+  ctx.save();
+  ctx.strokeStyle=C;
+  for(var sl=0;sl<h;sl+=4){
+    ctx.globalAlpha=0.032; ctx.lineWidth=1.3;
+    ctx.beginPath();ctx.moveTo(0,sl);ctx.lineTo(w,sl);ctx.stroke();
+  }
+  // Moving sweep
+  c2dSweepY+=0.9; if(c2dSweepY>h+50) c2dSweepY=-50;
+  var sg=ctx.createLinearGradient(0,c2dSweepY-25,0,c2dSweepY+25);
+  sg.addColorStop(0,'transparent'); sg.addColorStop(0.5,C); sg.addColorStop(1,'transparent');
+  ctx.strokeStyle=sg; ctx.globalAlpha=0.09; ctx.lineWidth=2.6;
+  ctx.beginPath();ctx.moveTo(0,c2dSweepY);ctx.lineTo(w,c2dSweepY);ctx.stroke();
+  ga1(); ctx.lineWidth=1;
+  ctx.restore();
+
   /* CORNERS */
   ctx.save(); ctx.strokeStyle=C; ga(0.4); ctx.lineWidth=2;
   [[20,20,1,1],[w-20,20,-1,1],[20,h-20,1,-1],[w-20,h-20,-1,-1]].forEach(function(q){
@@ -772,7 +794,6 @@ function drawHud2D(){
   var netLabel=document.getElementById('netV').textContent;
   var netMap={'SLOW-2G':15,'2G':30,'3G':65,'4G':90,'ONLINE':75,'OFFLINE':0};
   bar('NET',netMap[netLabel]||50,C);
-  // cpu + mem
   var cpuTxt=document.getElementById('cpuV').textContent;
   var memTxt=document.getElementById('memV').textContent;
   ga(0.8);ctx.fillStyle=C;ctx.font='900 11px Orbitron,monospace';
@@ -781,7 +802,7 @@ function drawHud2D(){
   ctx.fillText(cpuTxt,bx+42,by);ctx.fillText(memTxt,bx+42,by+14);
   ctx.restore();
 
-  /* BOTTOM LEFT — coords */
+  /* BOTTOM LEFT — coords + threat */
   ctx.save();
   var blX=22,blY=h-66;
   var cy2=blY;
@@ -794,6 +815,23 @@ function drawHud2D(){
   ctx.fillStyle=gc.indexOf('locked')>-1?C3:gc.indexOf('denied')>-1?CR:C2;
   ctx.font='900 10px Orbitron,monospace';
   ctx.fillText(gs?gs.textContent:'● GPS ACQUIRING',blX,cy2+32);
+  // Threat panel
+  var tvEl=document.getElementById('threatVal');
+  if(tvEl&&tvEl.textContent!=='--'&&document.getElementById('threatPanel').style.display!=='none'){
+    var ty=cy2-70;
+    ga(0.55);ctx.fillStyle=C;ctx.font='900 9px Orbitron,monospace';ctx.fillText('THREAT LEVEL',blX,ty);ga1();
+    var tvTxt=tvEl.textContent;
+    var tvCol=tvEl.style.color||C;
+    glow(tvCol,8);ctx.fillStyle=tvCol;ctx.font='900 13px Orbitron,monospace';ctx.fillText(tvTxt,blX,ty+14);ng();
+    // Threat bar
+    var tbEl=document.getElementById('threatBar');
+    var tbPct=tbEl?parseFloat(tbEl.style.width)||0:0;
+    ctx.fillStyle='rgba(255,255,255,.05)';ctx.fillRect(blX,ty+18,90,3);
+    ctx.fillStyle=tvCol;ctx.fillRect(blX,ty+18,90*tbPct/100,3);
+    // Sub factors
+    var tsubEl=document.getElementById('threatSub');
+    if(tsubEl){ga(0.5);ctx.fillStyle=C;ctx.font='700 9px "Share Tech Mono",monospace';ctx.fillText(tsubEl.textContent,blX,ty+30);ga1();}
+  }
   ctx.restore();
 
   /* POIs */
@@ -853,6 +891,22 @@ function drawHud2D(){
       ctx.fillStyle=col;ctx.font='bold 11px Orbitron,monospace';ctx.fillText(a.msg,ax+8,ay+14);
       ay+=26;
     });
+    ctx.restore();
+  }
+
+  /* ── THEME SWEEP OVERLAY (drawn last, on top) ── */
+  if(c2dThemeSweeping){
+    ctx.save();
+    c2dThemeSweepX+=w*0.07; // advance ~7% of canvas width per frame
+    if(c2dThemeSweepX>w*1.5){c2dThemeSweeping=false;c2dThemeSweepX=-9999;}
+    else{
+      var sw=w*0.25;
+      var tg=ctx.createLinearGradient(c2dThemeSweepX-sw,0,c2dThemeSweepX+sw,0);
+      tg.addColorStop(0,'transparent');
+      tg.addColorStop(0.5,'rgba(255,255,255,0.18)');
+      tg.addColorStop(1,'transparent');
+      ctx.fillStyle=tg; ctx.fillRect(0,0,w,h);
+    }
     ctx.restore();
   }
 }
