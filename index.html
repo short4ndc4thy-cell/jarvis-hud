@@ -25,8 +25,9 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 /* ── TOP LEFT: time + location ── */
 .tl{position:fixed;top:18px;left:18px;display:flex;flex-direction:column;gap:4px;z-index:10;}
 .clock{font-family:'Orbitron',monospace;font-size:1.6rem;font-weight:900;color:var(--c);text-shadow:var(--glow);letter-spacing:.08em;line-height:1;}
-.date{font-size:.55rem;color:rgba(0,229,255,.5);letter-spacing:.15em;}
-.area{font-size:.6rem;color:var(--c);letter-spacing:.12em;margin-top:2px;text-shadow:var(--glow);transition:color .4s;}
+.date{font-size:.66rem;color:rgba(0,229,255,.5);letter-spacing:.15em;}
+.area{font-size:.72rem;color:var(--c);letter-spacing:.12em;margin-top:2px;text-shadow:var(--glow);transition:color .4s;}
+.street{font-size:.58rem;color:rgba(0,229,255,.6);letter-spacing:.08em;margin-top:1px;}
 .area.updating{animation:pulse-text .6s ease;}
 @keyframes pulse-text{
   0%{opacity:1;text-shadow:0 0 20px rgba(0,229,255,1),0 0 40px rgba(0,229,255,.6);}
@@ -49,9 +50,9 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 /* ── BOTTOM LEFT: GPS ── */
 .bl{position:fixed;bottom:18px;left:18px;display:flex;flex-direction:column;gap:3px;z-index:10;}
 .loc-row{display:flex;gap:6px;align-items:baseline;}
-.lloc{font-size:.42rem;color:rgba(0,229,255,.35);letter-spacing:.14em;width:18px;}
-.lval{font-size:.55rem;color:var(--c);letter-spacing:.03em;transition:color .3s;}
-.gps-status{font-size:.44rem;letter-spacing:.14em;margin-top:2px;transition:color .4s;}
+.lloc{font-size:.5rem;color:rgba(0,229,255,.35);letter-spacing:.14em;width:20px;}
+.lval{font-size:.66rem;color:var(--c);letter-spacing:.03em;transition:color .3s;}
+.gps-status{font-size:.54rem;letter-spacing:.14em;margin-top:2px;transition:color .4s;}
 .gps-status.acquiring{color:var(--c2);animation:blink-acq 1.2s ease-in-out infinite;}
 .gps-status.locked{color:var(--c3);}
 .gps-status.denied{color:var(--cr);}
@@ -60,10 +61,10 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 /* ── BOTTOM RIGHT: weather ── */
 .br{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:4px;align-items:flex-end;z-index:10;}
 .temp{font-family:'Orbitron',monospace;font-size:1.4rem;font-weight:700;color:var(--c);text-shadow:var(--glow);transition:color .4s;}
-.cond{font-size:.5rem;color:rgba(0,229,255,.5);letter-spacing:.16em;}
-.wrow{font-size:.46rem;color:rgba(0,229,255,.4);display:flex;gap:6px;align-items:center;}
+.cond{font-size:.6rem;color:rgba(0,229,255,.5);letter-spacing:.16em;}
+.wrow{font-size:.55rem;color:rgba(0,229,255,.4);display:flex;gap:6px;align-items:center;}
 .wval{color:rgba(0,229,255,.85);transition:color .3s;}
-.sunrow{font-size:.4rem;color:rgba(0,229,255,.3);}
+.sunrow{font-size:.5rem;color:rgba(0,229,255,.3);}
 .divider{width:100%;height:1px;background:rgba(0,229,255,.12);margin:2px 0;}
 
 /* value-change pulse — applied via JS */
@@ -118,7 +119,8 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 <div class="tl">
   <div class="clock" id="clock">00:00:00</div>
   <div class="date"  id="date">-- --- ----</div>
-  <div class="area"  id="area">LOCATING...</div>
+  <div class="area"   id="area">LOCATING...</div>
+  <div class="street" id="street"></div>
 </div>
 
 <!-- TOP RIGHT -->
@@ -137,9 +139,30 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
 <!-- BOTTOM LEFT -->
 <div class="bl">
+  <canvas id="compass" width="80" height="80"></canvas>
   <div class="loc-row"><div class="lloc">LAT</div><div class="lval" id="latV">--</div></div>
   <div class="loc-row"><div class="lloc">LON</div><div class="lval" id="lonV">--</div></div>
+  <div class="loc-row"><div class="lloc">SPD</div><div class="lval" id="speedVal">0.0</div><div class="lloc" style="margin-left:2px">km/h</div></div>
+  <div class="loc-row"><div class="lloc">G</div><div class="lval" id="gVal">1.00</div></div>
   <div class="gps-status acquiring" id="gpsS">● GPS ACQUIRING</div>
+</div>
+
+<!-- WAYPOINTS — left middle -->
+<div id="wpPanel" style="position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:5px;"></div>
+
+<!-- MINIMAP for waypoints -->
+<div id="mapWrap" style="position:fixed;left:18px;top:50%;transform:translateY(-50%) translateY(-120px);z-index:10;display:flex;flex-direction:column;gap:3px;">
+  <div style="font-size:.38rem;color:rgba(0,229,255,.28);letter-spacing:.2em;">TAP TO SET WAYPOINT</div>
+  <div style="position:relative;width:110px;height:110px;border:1px solid rgba(0,229,255,.25);overflow:hidden;">
+    <div id="minimap" style="width:110px;height:110px;"></div>
+    <div style="position:absolute;inset:0;pointer-events:none;z-index:1000;">
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
+        <div style="width:5px;height:5px;background:var(--c);box-shadow:0 0 8px var(--c);position:relative;z-index:2;"></div>
+      </div>
+      <div id="mapHdgLine" style="position:absolute;top:50%;left:50%;width:28px;height:1px;background:linear-gradient(to right,var(--c),transparent);transform-origin:left center;transition:transform .3s;"></div>
+    </div>
+  </div>
+  <div id="wpDist" style="font-size:.4rem;color:var(--c2);letter-spacing:.1em;text-align:right;"></div>
 </div>
 
 <!-- BOTTOM RIGHT -->
@@ -248,8 +271,11 @@ function doWatch(){
     var newLat=pos.coords.latitude, newLon=pos.coords.longitude;
     var moved = lat==null || Math.abs(newLat-lat)>0.001 || Math.abs(newLon-lon)>0.001;
     lat=newLat; lon=newLon;
+    currentSpeed=(pos.coords.speed||0)*3.6; // m/s → km/h
     document.getElementById('latV').textContent=lat.toFixed(5)+'°';
     document.getElementById('lonV').textContent=lon.toFixed(5)+'°';
+    setVal('speedVal', currentSpeed.toFixed(1));
+    setVal('gVal', currentG.toFixed(2));
     setGPS('LOCKED','locked');
     fetchWeather();
     if(moved) reverseGeocode();
@@ -401,8 +427,82 @@ function wCode(c){
 }
 
 /* ══════════════════════════════════════
-   ALERTS
+   SPEED + G-FORCE
 ══════════════════════════════════════ */
+var currentSpeed=0, currentG=1.00;
+
+window.addEventListener('devicemotion',function(e){
+  if(!e.accelerationIncludingGravity) return;
+  var a=e.accelerationIncludingGravity;
+  currentG=Math.sqrt((a.x||0)*(a.x||0)+(a.y||0)*(a.y||0)+(a.z||0)*(a.z||0))/9.81;
+  setVal('gVal', currentG.toFixed(2));
+},true);
+
+/* ══════════════════════════════════════
+   COMPASS ROSE
+══════════════════════════════════════ */
+var compassHeading=0, hasRealHeading=false;
+var compassCanvas=document.getElementById('compass');
+var cctx=compassCanvas.getContext('2d');
+
+function drawCompass(){
+  requestAnimationFrame(drawCompass);
+  var s=80, cx=s/2, cy=s/2, r=34;
+  cctx.clearRect(0,0,s,s);
+
+  // outer ring
+  cctx.save();
+  cctx.strokeStyle='rgba(0,229,255,0.25)';cctx.lineWidth=1;
+  cctx.beginPath();cctx.arc(cx,cy,r,0,Math.PI*2);cctx.stroke();
+
+  // tick marks
+  for(var i=0;i<360;i+=45){
+    var a=(i-90)*Math.PI/180;
+    var inner=i%90===0?r-8:r-5;
+    cctx.strokeStyle=i===0?'rgba(255,23,68,0.8)':'rgba(0,229,255,0.3)';
+    cctx.lineWidth=i%90===0?1.5:1;
+    cctx.beginPath();
+    cctx.moveTo(cx+Math.cos(a)*inner,cy+Math.sin(a)*inner);
+    cctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);
+    cctx.stroke();
+  }
+
+  // cardinal labels
+  var cards=['N','E','S','W'];
+  cctx.font='bold 8px Orbitron,monospace';
+  cards.forEach(function(c,i){
+    var a=(i*90-compassHeading-90)*Math.PI/180;
+    var lx=cx+Math.cos(a)*(r-13);
+    var ly=cy+Math.sin(a)*(r-13)+3;
+    cctx.fillStyle=c==='N'?'rgba(255,23,68,0.9)':'rgba(0,229,255,0.65)';
+    if(c==='N') cctx.shadowColor='rgba(255,23,68,0.6)',cctx.shadowBlur=6;
+    else cctx.shadowBlur=0;
+    cctx.fillText(c,lx-cctx.measureText(c).width/2,ly);
+  });
+  cctx.shadowBlur=0;
+
+  // heading pointer (fixed pointing up = current heading direction)
+  cctx.save();
+  cctx.translate(cx,cy);
+  cctx.rotate(-compassHeading*Math.PI/180);
+  cctx.fillStyle='rgba(0,229,255,0.85)';
+  cctx.shadowColor='rgba(0,229,255,0.6)';cctx.shadowBlur=6;
+  cctx.beginPath();cctx.moveTo(0,-(r-3));cctx.lineTo(-4,4);cctx.lineTo(4,4);cctx.closePath();cctx.fill();
+  cctx.shadowBlur=0;
+  cctx.restore();
+
+  // centre dot
+  cctx.fillStyle='rgba(0,229,255,0.5)';
+  cctx.beginPath();cctx.arc(cx,cy,2.5,0,Math.PI*2);cctx.fill();
+  cctx.restore();
+}
+drawCompass();
+
+// hook real orientation
+window.addEventListener('deviceorientation',function(e){
+  var h=e.webkitCompassHeading!=null?e.webkitCompassHeading:(e.alpha!=null?(360-e.alpha):null);
+  if(h!=null){compassHeading=((h%360)+360)%360;hasRealHeading=true;}
+},true);
 function addAlert(msg,type){
   alertsState.unshift({msg:msg,type:type});
   alertsState=alertsState.slice(0,4);
