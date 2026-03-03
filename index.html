@@ -696,6 +696,11 @@ async function toggleNV(){
   nvVideo.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;';
   document.body.appendChild(nvVideo);
   nvVideo.srcObject=nvStream;
+  nvVideo.disablePictureInPicture=true;
+  // Prevent browser from pausing video in background
+  nvVideo.addEventListener('pause',function(){
+    if(nvActive){var p=nvVideo.play();if(p&&p.catch)p.catch(function(){});}
+  });
   // Play — handle both promise and old-style
   var playResult=nvVideo.play();
   if(playResult&&playResult.catch) playResult.catch(function(){});
@@ -723,6 +728,16 @@ async function toggleNV(){
 }
 
 var nvLoopId=null;
+
+// When tab comes back to foreground, resume video + sample immediately
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'&&nvActive&&nvVideo){
+    var p=nvVideo.play();
+    if(p&&p.catch) p.catch(function(){});
+    setTimeout(nvSample,200); // slight delay to let video resume
+  }
+});
+
 function nvSample(){
   if(!nvActive||!nvVideo||nvVideo.readyState<2) return;
   try{
