@@ -50,10 +50,6 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 .sys-row{font-size:.6rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);display:flex;gap:5px;align-items:center;justify-content:flex-end;}
 .sys-lbl{opacity:.7;}
 
-/* BEARING */
-#bearingWrap{width:200px;overflow:hidden;position:relative;height:32px;}
-#bearingCanvas{position:absolute;top:0;left:0;}
-#hdgVal{font-family:'Orbitron',monospace;font-size:.75rem;font-weight:900;color:var(--c);text-shadow:var(--glow);letter-spacing:.1em;text-align:center;margin-top:1px;}
 
 .bl{position:fixed;bottom:18px;left:18px;display:flex;flex-direction:column;gap:3px;z-index:10;}
 .loc-row{display:flex;gap:6px;align-items:baseline;}
@@ -163,9 +159,6 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 </div>
 
 <div class="bl">
-  <div id="bearingWrap"><canvas id="bearingCanvas"></canvas></div>
-  <div id="hdgVal">HDG ---°</div>
-  <div style="height:4px"></div>
   <div class="loc-row"><div class="lloc">LAT</div><div class="lval" id="latV">--</div></div>
   <div class="loc-row"><div class="lloc">LON</div><div class="lval" id="lonV">--</div></div>
   <div class="gps-status acquiring" id="gpsS">● GPS ACQUIRING</div>
@@ -225,14 +218,16 @@ var THEMES={
 };
 var currentTheme='cyan';
 function setTheme(name,btn){
-  // If user manually clicks a theme while NV is running, turn NV off
-  if(btn && nvActive){
-    nvActive=false; nvCurrentMode='';
+  // Manual click while NV is running: kill NV cleanly
+  if(btn&&nvActive){
+    nvActive=false; nvCurrentMode=''; nvBrightSamples=[];
+    clearInterval(nvLoopId); nvLoopId=null;
     if(nvStream){nvStream.getTracks().forEach(function(t){t.stop();}); nvStream=null;}
-    nvVideo=null; nvBrightSamples=[];
+    if(nvVideo){nvVideo.srcObject=null; nvVideo.remove(); nvVideo=null;}
     document.getElementById('nvBtn').classList.remove('active');
     document.getElementById('nvSub').classList.remove('visible');
     document.getElementById('nvStatus').textContent='● STANDBY';
+    document.getElementById('nvStatus').style.color='';
   }
   currentTheme=name;
   document.body.className='theme-'+name;
@@ -254,8 +249,6 @@ var isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
 var DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
 var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 var GPS_TIMEOUT=60000,GPS_RETRY_DELAY=5000,gpsRetryTimer=null,gpsAttempts=0,GPS_MAX_ATTEMPTS=10;
-var compassHeading=0,targetHeading=0;
-var gyroActive=false; // tracks if a real sensor is feeding heading
 var poiData=[];
 var cpuSamples=[];
 
@@ -270,8 +263,6 @@ var NV_DARK_THRESH=55,NV_LIGHT_THRESH=90;
 /* ── BOOT ── */
 window.addEventListener('DOMContentLoaded',function(){
   startClock(); startBattery(); startGPS(); startSysStats(); startNetwork();
-  startOrientation();
-  startBearingLoop();
   nvCanvas=document.createElement('canvas'); nvCanvas.width=32; nvCanvas.height=32;
   nvCtx=nvCanvas.getContext('2d',{willReadFrequently:true});
   if(isIOS) document.getElementById('permBtn').style.display='block';
@@ -506,127 +497,6 @@ function aqiInfo(v){if(v<=20)return{label:'GOOD',color:'#76ff03'};if(v<=40)retur
 function pollenInfo(v){if(v<=10)return{label:'LOW',color:'#76ff03'};if(v<=30)return{label:'MODERATE',color:'#ff6d00'};if(v<=50)return{label:'HIGH',color:'#ff6d00'};return{label:'VERY HIGH',color:'#ff1744'};}
 function wCode(c){if(c===0)return'CLEAR';if(c<=2)return'PARTLY CLOUDY';if(c<=3)return'OVERCAST';if(c<=49)return'FOG';if(c<=59)return'DRIZZLE';if(c<=69)return'RAIN';if(c<=79)return'SNOW';if(c<=82)return'SHOWERS';if(c<=99)return'STORM';return'--';}
 
-/* ── ORIENTATION / GYRO / COMPASS ── */
-// Handler shared by both deviceorientation and deviceorientationabsolute
-function handleOrientation(e){
-  var h=null;
-  // iOS Safari: webkitCompassHeading is true north, most reliable
-  if(e.webkitCompassHeading!=null){
-    h=e.webkitCompassHeading;
-  }
-  // Android absolute: alpha=0 = geographic north (when absolute=true)
-  else if(e.absolute===true && e.alpha!=null){
-    h=(360-e.alpha+360)%360;
-  }
-  // Non-absolute fallback (may drift but better than nothing)
-  else if(e.alpha!=null){
-    h=(360-e.alpha+360)%360;
-  }
-  if(h!=null){
-    gyroActive=true;
-    targetHeading=((h%360)+360)%360;
-  }
-}
-
-function startOrientation(){
-  // Try absolute first (Android Chrome, more accurate)
-  var gotAbsolute=false;
-  function onAbsolute(e){
-    if(e.alpha!=null){ gotAbsolute=true; handleOrientation(e); }
-  }
-  window.addEventListener('deviceorientationabsolute',onAbsolute,true);
-
-  // Also listen to standard event (iOS, Firefox, etc.)
-  window.addEventListener('deviceorientation',function(e){
-    // Only use this if absolute didn't fire
-    if(!gotAbsolute) handleOrientation(e);
-  },true);
-
-  // Mouse drag fallback for desktop (drag left/right to rotate)
-  var dragging=false,dragStartX=0,dragStartH=0;
-  document.addEventListener('mousedown',function(e){
-    if(gyroActive) return;
-    dragging=true; dragStartX=e.clientX; dragStartH=targetHeading;
-  });
-  document.addEventListener('mousemove',function(e){
-    if(!dragging||gyroActive) return;
-    var dx=e.clientX-dragStartX;
-    targetHeading=((dragStartH+dx*0.5)%360+360)%360;
-  });
-  document.addEventListener('mouseup',function(){dragging=false;});
-
-  // Touch drag fallback for mobile without gyro perms
-  var touchStartX=0,touchStartH=0;
-  document.addEventListener('touchstart',function(e){
-    if(gyroActive) return;
-    touchStartX=e.touches[0].clientX; touchStartH=targetHeading;
-  },{passive:true});
-  document.addEventListener('touchmove',function(e){
-    if(gyroActive) return;
-    var dx=e.touches[0].clientX-touchStartX;
-    targetHeading=((touchStartH+dx*0.5)%360+360)%360;
-  },{passive:true});
-}
-
-/* ── BEARING BAR (canvas, rAF driven, smooth interpolation) ── */
-function startBearingLoop(){requestAnimationFrame(bearingFrame);}
-
-function bearingFrame(){
-  requestAnimationFrame(bearingFrame);
-
-  // smooth lerp, shortest path
-  var diff=targetHeading-compassHeading;
-  if(diff>180) diff-=360; if(diff<-180) diff+=360;
-  compassHeading+=diff*0.12;
-  compassHeading=((compassHeading%360)+360)%360;
-
-  // draw on canvas
-  var wrap=document.getElementById('bearingWrap');
-  var cvs=document.getElementById('bearingCanvas');
-  if(!cvs||!wrap) return;
-  var dpr=window.devicePixelRatio||1;
-  var W=wrap.offsetWidth||200, H=wrap.offsetHeight||32;
-  if(cvs.width!==Math.round(W*dpr)){
-    cvs.width=Math.round(W*dpr); cvs.height=Math.round(H*dpr);
-    cvs.style.width=W+'px'; cvs.style.height=H+'px';
-  }
-  var ctx=cvs.getContext('2d');
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  ctx.clearRect(0,0,W,H);
-
-  var C=TC();
-  var cx=W/2;
-  var TPIX=10; // px per degree
-  var CARDS={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
-  var spread=Math.ceil(cx/TPIX)+5;
-  var h=compassHeading;
-
-  for(var off=-spread;off<=spread;off++){
-    var deg=((Math.round(h)+off)%360+360)%360;
-    var x=cx+off*TPIX;
-    var isMaj=deg%45===0, isMed=deg%15===0;
-    if(!isMaj&&!isMed&&deg%5!==0) continue;
-    var tH=isMaj?16:isMed?9:5;
-    ctx.beginPath(); ctx.moveTo(x,H-tH); ctx.lineTo(x,H);
-    ctx.strokeStyle=C; ctx.globalAlpha=isMaj?0.9:isMed?0.5:0.22; ctx.lineWidth=isMaj?1.5:1; ctx.stroke(); ctx.globalAlpha=1;
-    if(isMaj){
-      var card=CARDS[deg]; var lbl=card||String(deg);
-      ctx.font=card?'bold 9px Orbitron,monospace':'bold 8px "Share Tech Mono",monospace';
-      ctx.fillStyle=deg===0?'#ff1744':C; ctx.globalAlpha=deg===0?1:0.85;
-      ctx.fillText(lbl,x-ctx.measureText(lbl).width/2,H-tH-2); ctx.globalAlpha=1;
-    }
-  }
-  // reticle line + triangle
-  ctx.strokeStyle=C; ctx.globalAlpha=0.6; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke(); ctx.globalAlpha=1;
-  ctx.fillStyle=C;
-  ctx.beginPath(); ctx.moveTo(cx-5,0); ctx.lineTo(cx+5,0); ctx.lineTo(cx,7); ctx.closePath(); ctx.fill();
-
-  var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  var dir=dirs[Math.round(h/22.5)%16];
-  document.getElementById('hdgVal').textContent='HDG '+Math.round(h).toString().padStart(3,'0')+'°  '+dir;
-}
-
 /* ── ALERTS ── */
 function addAlert(msg,type){
   alertsState.unshift({msg:msg,type:type}); alertsState=alertsState.slice(0,4);
@@ -698,49 +568,15 @@ function drawHud2D(){
   ctx.fillText(cpuTxt,bx+42,by);ctx.fillText(memTxt,bx+42,by+14);
   ctx.restore();
 
-  /* BOTTOM LEFT — bearing bar + coords */
+  /* BOTTOM LEFT — coords */
   ctx.save();
-  var blX=22,blY=h-144,barW=200,barH=32;
-  var hDeg=compassHeading,TPIX=10,bcx=blX+barW/2;
-  var CARDS2={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
-
-  ctx.save();
-  ctx.beginPath();ctx.rect(blX,blY,barW,barH);ctx.clip();
-  var spread=Math.ceil(barW/2/TPIX)+5;
-  for(var off=-spread;off<=spread;off++){
-    var deg2=((Math.round(hDeg)+off)%360+360)%360;
-    var tx=bcx+off*TPIX;
-    var isMaj=deg2%45===0,isMed=deg2%15===0;
-    if(!isMaj&&!isMed&&deg2%5!==0) continue;
-    var tH=isMaj?16:isMed?9:5;
-    ctx.beginPath();ctx.moveTo(tx,blY+barH-tH);ctx.lineTo(tx,blY+barH);
-    ctx.strokeStyle=C;ga(isMaj?0.9:isMed?0.5:0.22);ctx.lineWidth=isMaj?1.5:1;ctx.stroke();ga1();
-    if(isMaj){
-      var card2=CARDS2[deg2],lbl2=card2||String(deg2);
-      ctx.font=card2?'bold 9px Orbitron,monospace':'bold 8px "Share Tech Mono",monospace';
-      ctx.fillStyle=deg2===0?'#ff1744':C;ga(deg2===0?1:0.85);
-      ctx.fillText(lbl2,tx-ctx.measureText(lbl2).width/2,blY+barH-tH-2);ga1();
-    }
-  }
-  ctx.restore();
-  ctx.strokeStyle=C;ga(0.6);ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(bcx,blY);ctx.lineTo(bcx,blY+barH);ctx.stroke();ga1();
-  ctx.fillStyle=C;
-  ctx.beginPath();ctx.moveTo(bcx-5,blY);ctx.lineTo(bcx+5,blY);ctx.lineTo(bcx,blY+7);ctx.closePath();ctx.fill();
-
-  // HDG label
-  var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  var dir=dirs[Math.round(hDeg/22.5)%16];
-  glow(C,6);ctx.fillStyle=C;ctx.font='900 12px Orbitron,monospace';
-  ctx.fillText('HDG '+Math.round(hDeg).toString().padStart(3,'0')+'°  '+dir,blX,blY+barH+14);ng();
-
-  var cy2=blY+barH+30;
+  var blX=22,blY=h-66;
+  var cy2=blY;
   ga(0.8);ctx.fillStyle=C;ctx.font='900 12px Orbitron,monospace';
   ctx.fillText('LAT',blX,cy2);ctx.fillText('LON',blX,cy2+16);ga1();
   ctx.fillStyle=C;ctx.font='bold 13px "Share Tech Mono",monospace';
   ctx.fillText(lat!=null?lat.toFixed(5)+'°':'ACQUIRING',blX+30,cy2);
   ctx.fillText(lon!=null?lon.toFixed(5)+'°':'ACQUIRING',blX+30,cy2+16);
-
   var gs=document.getElementById('gpsS'),gc=gs?gs.className:'';
   ctx.fillStyle=gc.indexOf('locked')>-1?C3:gc.indexOf('denied')>-1?CR:C2;
   ctx.font='900 10px Orbitron,monospace';
@@ -813,94 +649,110 @@ function setNvDark(name,btn){
   nvDarkTheme=name;
   document.querySelectorAll('[id^="nvd-"]').forEach(function(b){b.classList.remove('active');});
   if(btn) btn.classList.add('active');
-  if(nvActive&&nvCurrentMode==='dark') setTheme(nvDarkTheme);
+  if(nvActive&&nvCurrentMode==='dark') applyThemeNV(nvDarkTheme);
 }
 function setNvLight(name,btn){
   nvLightTheme=name;
   document.querySelectorAll('[id^="nvl-"]').forEach(function(b){b.classList.remove('active');});
   if(btn) btn.classList.add('active');
-  if(nvActive&&nvCurrentMode==='light') setTheme(nvLightTheme);
+  if(nvActive&&nvCurrentMode==='light') applyThemeNV(nvLightTheme);
+}
+// Internal theme apply that doesn't kill NV
+function applyThemeNV(name){
+  currentTheme=name;
+  document.body.className='theme-'+name;
 }
 
 async function toggleNV(){
   var btn=document.getElementById('nvBtn');
   var sub=document.getElementById('nvSub');
+  var statusEl=document.getElementById('nvStatus');
   if(nvActive){
-    // Turn off
-    nvActive=false;
-    nvCurrentMode='';
+    nvActive=false; nvCurrentMode=''; nvBrightSamples=[];
+    clearInterval(nvLoopId); nvLoopId=null;
     if(nvStream){nvStream.getTracks().forEach(function(t){t.stop();}); nvStream=null;}
-    nvVideo=null; nvBrightSamples=[];
+    if(nvVideo){nvVideo.srcObject=null; nvVideo.remove(); nvVideo=null;}
     btn.classList.remove('active');
     sub.classList.remove('visible');
-    document.getElementById('nvStatus').textContent='● STANDBY';
+    statusEl.textContent='● STANDBY';
+    statusEl.style.color='';
     addAlert('AUTO NV OFF','info');
     return;
   }
-  // Turn on — request rear camera
+  // Request camera
   try{
     nvStream=await navigator.mediaDevices.getUserMedia({
       video:{facingMode:{ideal:'environment'},width:{ideal:64},height:{ideal:64}}
     });
-    nvVideo=document.createElement('video');
-    nvVideo.srcObject=nvStream;
-    nvVideo.setAttribute('playsinline','');
-    nvVideo.setAttribute('muted','');
-    nvVideo.muted=true;
-    nvVideo.play();
-    nvActive=true;
-    btn.classList.add('active');
-    sub.classList.add('visible');
-    document.getElementById('nvStatus').textContent='● SENSING';
-    addAlert('AUTO NV ON','ok');
-    // Start the sample loop
-    nvSampleLoop();
   }catch(e){
-    addAlert('CAM DENIED','warn');
+    addAlert('CAM DENIED','warn'); return;
   }
+  // Create video element, append to body hidden
+  nvVideo=document.createElement('video');
+  nvVideo.setAttribute('autoplay','');
+  nvVideo.setAttribute('playsinline','');
+  nvVideo.setAttribute('muted','');
+  nvVideo.muted=true;
+  nvVideo.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;';
+  document.body.appendChild(nvVideo);
+  nvVideo.srcObject=nvStream;
+  // Play — handle both promise and old-style
+  var playResult=nvVideo.play();
+  if(playResult&&playResult.catch) playResult.catch(function(){});
+
+  nvActive=true;
+  btn.classList.add('active');
+  sub.classList.add('visible');
+  statusEl.textContent='● WARMING UP';
+  addAlert('AUTO NV ON','ok');
+
+  // Wait up to 3s for video to be ready, then start loop
+  var readyWait=0;
+  var readyCheck=setInterval(function(){
+    readyWait+=100;
+    if(nvVideo&&nvVideo.readyState>=2){
+      clearInterval(readyCheck);
+      statusEl.textContent='● SENSING';
+      nvLoopId=setInterval(nvSample,900);
+      nvSample(); // immediate first sample
+    } else if(readyWait>3000){
+      clearInterval(readyCheck);
+      statusEl.textContent='● NO SIGNAL';
+    }
+  },100);
 }
 
-function nvSampleLoop(){
-  if(!nvActive) return;
-  setTimeout(nvSampleLoop, 800); // sample ~1.2x/sec
-
-  if(!nvVideo||nvVideo.readyState<2) return;
+var nvLoopId=null;
+function nvSample(){
+  if(!nvActive||!nvVideo||nvVideo.readyState<2) return;
   try{
     nvCtx.drawImage(nvVideo,0,0,32,32);
     var data=nvCtx.getImageData(0,0,32,32).data;
-    var sum=0,count=0;
-    // sample every 4th pixel for speed, use perceived luminance weights
+    var sum=0,n=0;
     for(var i=0;i<data.length;i+=16){
+      // perceived luminance
       sum+=data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114;
-      count++;
+      n++;
     }
-    var lum=count>0?sum/count:128;
-
-    // Rolling average for stability
+    var lum=n>0?sum/n:128;
     nvBrightSamples.push(lum);
     if(nvBrightSamples.length>NV_SAMPLE_SIZE) nvBrightSamples.shift();
     var avg=nvBrightSamples.reduce(function(a,b){return a+b;},0)/nvBrightSamples.length;
-
     var pct=Math.round(avg/255*100);
     var statusEl=document.getElementById('nvStatus');
 
-    // Apply with hysteresis to prevent flicker
-    if(avg<NV_DARK_THRESH && nvCurrentMode!=='dark'){
+    if(avg<NV_DARK_THRESH&&nvCurrentMode!=='dark'){
       nvCurrentMode='dark';
-      setTheme(nvDarkTheme);
-      statusEl.textContent='● NIGHT  '+pct+'%';
+      applyThemeNV(nvDarkTheme);
       statusEl.style.color=THEMES[nvDarkTheme].c;
       addAlert('NV · NIGHT MODE','warn');
-    } else if(avg>NV_LIGHT_THRESH && nvCurrentMode!=='light'){
+    } else if(avg>NV_LIGHT_THRESH&&nvCurrentMode!=='light'){
       nvCurrentMode='light';
-      setTheme(nvLightTheme);
-      statusEl.textContent='● DAY  '+pct+'%';
+      applyThemeNV(nvLightTheme);
       statusEl.style.color=THEMES[nvLightTheme].c;
       addAlert('NV · DAY MODE','info');
-    } else {
-      // Update brightness readout without switching
-      statusEl.textContent=(nvCurrentMode==='dark'?'● NIGHT ':nvCurrentMode==='light'?'● DAY ':'● SENSING ')+pct+'%';
     }
+    statusEl.textContent=(nvCurrentMode==='dark'?'● NIGHT ':nvCurrentMode==='light'?'● DAY ':'● SENSING ')+pct+'%';
   }catch(e){}
 }
 
