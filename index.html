@@ -3,200 +3,180 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HUD // ONLINE (XR Head-Locked)</title>
+<title>JARVIS HUD</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
-
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
 :root{
   --c:#00e5ff;--c2:#ff6d00;--c3:#76ff03;--cr:#ff1744;
-  --dim:rgba(0,229,255,0.07);--stroke:rgba(0,229,255,0.3);
-  --glow:0 0 10px rgba(0,229,255,.55),0 0 22px rgba(0,229,255,.18);
-  --glow2:0 0 10px rgba(255,109,0,.55);
-  --glow3:0 0 8px rgba(118,255,3,.5);
+  --glow:0 0 10px rgba(0,229,255,.5),0 0 22px rgba(0,229,255,.15);
+  --glow2:0 0 8px rgba(255,109,0,.5);
+  --glow3:0 0 8px rgba(118,255,3,.45);
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;width:100vw;height:100vh;overflow:hidden;}
 
-/* ── BOOT ── */
-#boot{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .6s ease;}
+/* BOOT */
+#boot{position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .7s ease;}
 #boot.gone{opacity:0;pointer-events:none;}
-.b-logo{font-family:'Orbitron',monospace;font-size:2.2rem;font-weight:900;letter-spacing:.45em;color:var(--c);text-shadow:var(--glow);animation:fi .5s ease .1s both;}
-.b-sub{font-size:.6rem;letter-spacing:.5em;color:rgba(0,229,255,.45);margin-top:.4rem;animation:fi .5s ease .4s both;}
-.b-bar-w{width:280px;height:2px;background:rgba(0,229,255,.1);margin-top:1.8rem;overflow:hidden;animation:fi .3s ease .7s both;}
-.b-bar{height:100%;background:var(--c);box-shadow:var(--glow);animation:bbar 2.4s ease .8s both;}
+.b-logo{font-family:'Orbitron',monospace;font-size:2.4rem;font-weight:900;letter-spacing:.45em;color:var(--c);text-shadow:var(--glow);animation:fi .4s ease .1s both;}
+.b-sub{font-size:.58rem;letter-spacing:.5em;color:rgba(0,229,255,.4);margin-top:.4rem;animation:fi .4s ease .3s both;}
+.b-bar-w{width:260px;height:2px;background:rgba(0,229,255,.08);margin-top:1.6rem;overflow:hidden;animation:fi .3s ease .6s both;}
+.b-bar{height:100%;background:var(--c);box-shadow:var(--glow);animation:bbar 2.2s ease .7s both;}
 @keyframes bbar{from{width:0}to{width:100%}}
-.b-lines{margin-top:1.2rem;font-size:.52rem;color:rgba(0,229,255,.38);letter-spacing:.08em;line-height:2;width:280px;}
+.b-lines{margin-top:1rem;font-size:.5rem;color:rgba(0,229,255,.35);letter-spacing:.08em;line-height:2;width:260px;}
 .bl{animation:fi .2s ease both;}
-.bl:nth-child(1){animation-delay:1s}.bl:nth-child(2){animation-delay:1.3s}.bl:nth-child(3){animation-delay:1.6s}
-.bl:nth-child(4){animation-delay:1.9s}.bl:nth-child(5){animation-delay:2.2s}.bl:nth-child(6){animation-delay:2.5s}
-@keyframes fi{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.bl:nth-child(1){animation-delay:.9s}.bl:nth-child(2){animation-delay:1.2s}
+.bl:nth-child(3){animation-delay:1.5s}.bl:nth-child(4){animation-delay:1.8s}
+.bl:nth-child(5){animation-delay:2.1s}.bl:nth-child(6){animation-delay:2.4s}
+@keyframes fi{from{opacity:0;transform:translateX(-5px)}to{opacity:1;transform:none}}
 
-/* ── HUD WRAPPER ── */
+/* HUD */
 #hud{position:fixed;inset:0;opacity:0;pointer-events:none;transition:opacity .8s ease;}
 #hud.on{opacity:1;}
 
-/* layers */
-.scanlines{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,229,255,.006) 2px,rgba(0,229,255,.006) 4px);pointer-events:none;z-index:2;}
-.vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.55) 100%);pointer-events:none;z-index:1;}
-.frame{position:absolute;inset:0;border:1px solid rgba(0,229,255,.1);box-shadow:inset 0 0 80px rgba(0,229,255,.03);pointer-events:none;z-index:3;}
+/* Subtle overlays */
+.scanlines{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,229,255,.004) 3px,rgba(0,229,255,.004) 4px);pointer-events:none;z-index:2;}
+.vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.6) 100%);pointer-events:none;z-index:1;}
 
-/* corners */
-.corner{position:absolute;width:55px;height:55px;border-color:var(--c);border-style:solid;opacity:.55;z-index:3;}
-.corner.tl{top:14px;left:14px;border-width:2px 0 0 2px;}
-.corner.tr{top:14px;right:14px;border-width:2px 2px 0 0;}
-.corner.bl{bottom:14px;left:14px;border-width:0 0 2px 2px;}
-.corner.br{bottom:14px;right:14px;border-width:0 2px 2px 0;}
+/* Corner brackets */
+.corner{position:absolute;width:44px;height:44px;border-color:rgba(0,229,255,.5);border-style:solid;z-index:3;}
+.corner.tl{top:16px;left:16px;border-width:1.5px 0 0 1.5px;}
+.corner.tr{top:16px;right:16px;border-width:1.5px 1.5px 0 0;}
+.corner.bl{bottom:16px;left:16px;border-width:0 0 1.5px 1.5px;}
+.corner.br{bottom:16px;right:16px;border-width:0 1.5px 1.5px 0;}
 
-/* ── COMPASS ── */
-.compass-wrap{position:absolute;top:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;z-index:10;}
-.compass-bar{position:relative;width:320px;height:26px;overflow:hidden;border:1px solid rgba(0,229,255,.2);background:rgba(0,0,0,.5);backdrop-filter:blur(6px);}
+/* COMPASS */
+.compass-wrap{position:absolute;top:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;z-index:10;}
+.compass-bar{position:relative;width:300px;height:24px;overflow:hidden;border:1px solid rgba(0,229,255,.18);background:rgba(0,0,0,.55);backdrop-filter:blur(8px);}
 .compass-track{position:absolute;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;transition:transform .08s linear;}
-.cd{font-size:.52rem;color:rgba(0,229,255,.45);padding:0 5px;letter-spacing:.04em;}
-.cd.card{color:var(--c);font-weight:700;font-size:.62rem;text-shadow:var(--glow);}
+.cd{font-size:.5rem;color:rgba(0,229,255,.38);padding:0 5px;letter-spacing:.04em;}
+.cd.card{color:var(--c);font-weight:700;font-size:.6rem;text-shadow:var(--glow);}
 .cd.card.s,.cd.card.w{color:var(--c2);}
 .compass-pin{position:absolute;top:0;left:50%;transform:translateX(-50%);width:1px;height:100%;background:var(--c);box-shadow:var(--glow);}
-.compass-pin::before{content:'▼';position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:.45rem;color:var(--c);}
-.hdg-text{font-family:'Orbitron',monospace;font-size:.65rem;font-weight:700;letter-spacing:.2em;color:var(--c);text-shadow:var(--glow);}
+.compass-pin::before{content:'▼';position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:.42rem;color:var(--c);}
+.hdg-text{font-family:'Orbitron',monospace;font-size:.62rem;font-weight:700;letter-spacing:.2em;color:rgba(0,229,255,.7);}
 
-/* ── TOP LEFT: CLOCK + SPEED ── */
-.panel-tl{position:absolute;top:20px;left:20px;z-index:10;display:flex;flex-direction:column;gap:3px;}
-.clock{font-family:'Orbitron',monospace;font-size:1.5rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.1em;line-height:1;}
-.clock-sub{font-size:.55rem;color:rgba(0,229,255,.55);letter-spacing:.18em;text-transform:uppercase;}
-.speed-big{font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:700;color:var(--c3);text-shadow:var(--glow3);letter-spacing:.1em;margin-top:6px;}
-.speed-unit{font-size:.48rem;color:rgba(118,255,3,.5);letter-spacing:.3em;}
-.gforce{font-size:.55rem;color:var(--c2);letter-spacing:.1em;margin-top:2px;}
+/* TOP LEFT */
+.panel-tl{position:absolute;top:18px;left:18px;z-index:10;display:flex;flex-direction:column;gap:2px;}
+.clock{font-family:'Orbitron',monospace;font-size:1.45rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.08em;line-height:1;}
+.clock-sub{font-size:.5rem;color:rgba(0,229,255,.45);letter-spacing:.15em;}
+.speed-big{font-family:'Orbitron',monospace;font-size:1.05rem;font-weight:700;color:var(--c3);text-shadow:var(--glow3);letter-spacing:.08em;margin-top:7px;}
+.speed-unit{font-size:.44rem;color:rgba(118,255,3,.45);letter-spacing:.28em;}
+.gforce{font-size:.52rem;color:var(--c2);letter-spacing:.08em;margin-top:1px;}
 
-/* ── TOP RIGHT: STATS ── */
-.panel-tr{position:absolute;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;gap:5px;align-items:flex-end;}
-.stat-row{display:flex;align-items:center;gap:7px;}
-.slbl{font-size:.48rem;color:rgba(0,229,255,.4);letter-spacing:.18em;text-transform:uppercase;width:26px;text-align:right;}
-.sbar{width:75px;height:3px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.12);overflow:hidden;}
+/* TOP RIGHT: STATS */
+.panel-tr{position:absolute;top:18px;right:18px;z-index:10;display:flex;flex-direction:column;gap:5px;align-items:flex-end;}
+.stat-row{display:flex;align-items:center;gap:6px;}
+.slbl{font-size:.44rem;color:rgba(0,229,255,.35);letter-spacing:.18em;width:24px;text-align:right;}
+.sbar{width:70px;height:3px;background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.1);overflow:hidden;}
 .sf{height:100%;transition:width .8s ease;}
 .sf.c{background:var(--c);box-shadow:var(--glow);}
 .sf.o{background:var(--c2);box-shadow:var(--glow2);}
 .sf.g{background:var(--c3);box-shadow:var(--glow3);}
-.sf.r{background:var(--cr);box-shadow:0 0 8px rgba(255,23,68,.5);}
-.sval{font-size:.55rem;color:var(--c);min-width:30px;text-align:right;}
+.sf.r{background:var(--cr);}
+.sval{font-size:.52rem;color:rgba(0,229,255,.8);min-width:28px;text-align:right;}
 
-/* ── WEATHER PANEL ── */
-.weather-panel{position:absolute;top:90px;right:20px;z-index:10;display:flex;flex-direction:column;gap:3px;align-items:flex-end;border-left:1px solid rgba(0,229,255,.15);padding-left:10px;}
-.w-temp{font-family:'Orbitron',monospace;font-size:1.3rem;font-weight:700;color:var(--c);text-shadow:var(--glow);}
-.w-cond{font-size:.5rem;color:rgba(0,229,255,.55);letter-spacing:.2em;text-transform:uppercase;}
-.w-row{display:flex;gap:8px;font-size:.5rem;color:rgba(0,229,255,.45);letter-spacing:.1em;}
-.w-val{color:var(--c);}
-.wind-arrow{font-size:.9rem;display:inline-block;transition:transform .5s ease;}
-.sunrise-row{font-size:.48rem;color:rgba(0,229,255,.35);letter-spacing:.1em;}
+/* WEATHER — under stats */
+.weather-panel{position:absolute;top:88px;right:18px;z-index:10;display:flex;flex-direction:column;gap:2px;align-items:flex-end;border-left:1px solid rgba(0,229,255,.12);padding-left:10px;}
+.w-temp{font-family:'Orbitron',monospace;font-size:1.2rem;font-weight:700;color:var(--c);text-shadow:var(--glow);}
+.w-cond{font-size:.46rem;color:rgba(0,229,255,.5);letter-spacing:.2em;}
+.w-row{display:flex;gap:6px;font-size:.46rem;color:rgba(0,229,255,.38);letter-spacing:.08em;}
+.w-val{color:rgba(0,229,255,.75);}
+.wind-arrow{display:inline-block;transition:transform .5s ease;}
+.sunrise-row{font-size:.44rem;color:rgba(0,229,255,.3);letter-spacing:.08em;}
 
-/* ── HORIZON ── */
+/* HORIZON */
 .horizon-wrap{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:5;}
 .horizon{display:flex;align-items:center;gap:10px;transition:transform .1s ease;}
-.h-line{width:110px;height:1px;background:rgba(0,229,255,.3);}
-.h-center{width:8px;height:8px;border:1px solid var(--c);transform:rotate(45deg);box-shadow:var(--glow);background:rgba(0,229,255,.08);}
+.h-line{width:100px;height:1px;background:rgba(0,229,255,.25);}
+.h-center{width:7px;height:7px;border:1px solid var(--c);transform:rotate(45deg);box-shadow:var(--glow);background:rgba(0,229,255,.07);}
 .pitch-mark{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;}
-.pm-line{width:50px;height:1px;background:rgba(0,229,255,.18);}
-.pm-lbl{font-size:.42rem;color:rgba(0,229,255,.35);white-space:nowrap;}
+.pm-line{width:44px;height:1px;background:rgba(0,229,255,.14);}
+.pm-lbl{font-size:.4rem;color:rgba(0,229,255,.3);}
 
-/* ── COORDS + STATUS ── */
-.panel-bl{position:absolute;bottom:24px;left:20px;z-index:10;display:flex;flex-direction:column;gap:2px;}
-.coord-row{display:flex;gap:6px;align-items:baseline;}
-.clbl{font-size:.46rem;color:rgba(0,229,255,.38);letter-spacing:.18em;width:22px;}
-.cval{font-size:.6rem;color:var(--c);letter-spacing:.04em;}
-.sys-status{font-size:.44rem;color:rgba(0,229,255,.28);letter-spacing:.28em;margin-top:4px;text-transform:uppercase;}
-.sdot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--c3);box-shadow:var(--glow3);animation:blink 2s ease-in-out infinite;margin-right:3px;}
-@keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
+/* BOTTOM LEFT */
+.panel-bl{position:absolute;bottom:22px;left:18px;z-index:10;display:flex;flex-direction:column;gap:2px;}
+.coord-row{display:flex;gap:5px;align-items:baseline;}
+.clbl{font-size:.44rem;color:rgba(0,229,255,.35);letter-spacing:.15em;width:20px;}
+.cval{font-size:.58rem;color:var(--c);letter-spacing:.04em;}
+.gps-status{font-size:.42rem;letter-spacing:.2em;margin-top:2px;}
+.gps-status.acquiring{color:var(--c2);}
+.gps-status.locked{color:var(--c3);}
+.sys-status{font-size:.42rem;color:rgba(0,229,255,.25);letter-spacing:.22em;margin-top:2px;}
+.sdot{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--c3);box-shadow:var(--glow3);animation:blink 2s ease-in-out infinite;margin-right:3px;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
 
-/* ── HEADING BIG ── */
-.panel-bc{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;align-items:center;gap:1px;}
-.hdg-big{font-family:'Orbitron',monospace;font-size:1rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.15em;}
-.hdg-deg{font-size:.48rem;color:rgba(0,229,255,.45);letter-spacing:.35em;}
+/* BOTTOM CENTER */
+.panel-bc{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;align-items:center;gap:1px;}
+.hdg-big{font-family:'Orbitron',monospace;font-size:.95rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.15em;}
+.hdg-deg{font-size:.44rem;color:rgba(0,229,255,.4);letter-spacing:.3em;}
 
-/* ── MINIMAP ── */
-.map-panel{position:absolute;bottom:20px;right:20px;z-index:10;display:flex;flex-direction:column;gap:3px;align-items:flex-end;}
-.map-lbl{font-size:.44rem;color:rgba(0,229,255,.32);letter-spacing:.28em;text-transform:uppercase;}
-#minimap{width:150px;height:150px;border:1px solid rgba(0,229,255,.25);overflow:hidden;position:relative;background:#000;}
-#minimap .leaflet-tile{filter:invert(1) hue-rotate(180deg) saturate(3) brightness(.7);}
+/* MINIMAP */
+.map-panel{position:absolute;bottom:18px;right:18px;z-index:10;display:flex;flex-direction:column;gap:3px;align-items:flex-end;}
+.map-lbl{font-size:.42rem;color:rgba(0,229,255,.28);letter-spacing:.25em;}
+#minimap{width:140px;height:140px;border:1px solid rgba(0,229,255,.22);overflow:hidden;position:relative;background:#000;}
+#minimap .leaflet-tile{filter:invert(1) hue-rotate(180deg) saturate(3) brightness(.65);}
 #minimap .leaflet-control-container{display:none;}
 .map-overlay{position:absolute;inset:0;pointer-events:none;z-index:1000;}
 .map-self-dot{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);}
-.msd-inner{width:8px;height:8px;background:var(--c);box-shadow:var(--glow);position:relative;z-index:2;}
-.msd-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:20px;border:1px solid rgba(0,229,255,.4);border-radius:50%;animation:mring 2s ease-in-out infinite;}
-@keyframes mring{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:.5;}50%{transform:translate(-50%,-50%) scale(2);opacity:0;}}
-.map-hdg-line{position:absolute;top:50%;left:50%;width:40px;height:1px;background:linear-gradient(to right,var(--c),transparent);transform-origin:left center;box-shadow:var(--glow);transition:transform .3s ease;}
-.waypoint-dist{font-size:.48rem;color:var(--c2);letter-spacing:.15em;text-align:right;}
+.msd-inner{width:7px;height:7px;background:var(--c);box-shadow:var(--glow);position:relative;z-index:2;}
+.msd-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:18px;height:18px;border:1px solid rgba(0,229,255,.35);border-radius:50%;animation:mring 2s ease-in-out infinite;}
+@keyframes mring{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:.5;}50%{transform:translate(-50%,-50%) scale(2.2);opacity:0;}}
+.map-hdg-line{position:absolute;top:50%;left:50%;width:36px;height:1px;background:linear-gradient(to right,var(--c),transparent);transform-origin:left center;transition:transform .3s ease;}
+.waypoint-dist{font-size:.44rem;color:var(--c2);letter-spacing:.12em;}
 
-/* ── WAYPOINTS SIDEBAR ── */
-.wp-panel{position:absolute;left:20px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:4px;max-height:200px;overflow:hidden;}
-.wp-item{display:flex;flex-direction:column;gap:1px;border-left:2px solid var(--c2);padding-left:6px;opacity:.8;}
-.wp-item:hover{opacity:1;}
-.wp-name{font-size:.52rem;color:var(--c2);letter-spacing:.1em;text-transform:uppercase;}
-.wp-info{font-size:.46rem;color:rgba(255,109,0,.5);letter-spacing:.08em;}
+/* WAYPOINTS SIDEBAR */
+.wp-panel{position:absolute;left:18px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:4px;}
+.wp-item{display:flex;flex-direction:column;gap:1px;border-left:1.5px solid rgba(255,109,0,.5);padding-left:6px;}
+.wp-name{font-size:.5rem;color:var(--c2);letter-spacing:.08em;}
+.wp-info{font-size:.43rem;color:rgba(255,109,0,.45);letter-spacing:.06em;}
 
-/* ── OBJECT DETECTION ── */
-.detect-panel{position:absolute;top:50%;right:20px;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:4px;align-items:flex-end;max-height:300px;overflow:hidden;}
-.det-item{font-size:.5rem;padding:.15rem .4rem;border:1px solid;display:flex;gap:6px;align-items:center;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);animation:fi .2s ease both;}
-.det-item.person{border-color:var(--cr);color:var(--cr);}
-.det-item.object{border-color:var(--c);color:var(--c);}
-.det-conf{opacity:.6;}
-#camFeed{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;}
-#detCanvas{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;}
+/* DETECTIONS */
+.detect-panel{position:absolute;top:50%;right:18px;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:3px;align-items:flex-end;}
+.det-item{font-size:.47rem;padding:.12rem .35rem;border:1px solid;display:flex;gap:5px;align-items:center;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);animation:fi .2s ease both;}
+.det-item.person{border-color:rgba(255,23,68,.6);color:var(--cr);}
+.det-item.object{border-color:rgba(0,229,255,.3);color:rgba(0,229,255,.8);}
+.det-conf{opacity:.55;}
 
-/* ── THREAT ── */
-.threat-panel{position:absolute;left:20px;bottom:180px;z-index:10;display:flex;flex-direction:column;gap:2px;}
-.threat-lbl{font-size:.44rem;color:rgba(0,229,255,.32);letter-spacing:.28em;text-transform:uppercase;}
-.threat-bar{width:120px;height:6px;background:rgba(255,255,255,.06);border:1px solid rgba(0,229,255,.1);overflow:hidden;position:relative;}
+/* THREAT */
+.threat-panel{position:absolute;left:18px;bottom:170px;z-index:10;}
+.threat-lbl{font-size:.42rem;color:rgba(0,229,255,.28);letter-spacing:.25em;margin-bottom:2px;}
+.threat-bar{width:110px;height:5px;background:rgba(255,255,255,.05);border:1px solid rgba(0,229,255,.1);overflow:hidden;}
 .threat-fill{height:100%;background:linear-gradient(to right,var(--c3),var(--c2),var(--cr));transition:width .5s ease;}
-.threat-val{font-size:.5rem;letter-spacing:.15em;}
+.threat-val{font-size:.46rem;letter-spacing:.12em;margin-top:2px;}
 
-/* ── ALERTS ── */
-.alerts{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) translateY(-80px);z-index:20;display:flex;flex-direction:column;gap:4px;align-items:center;pointer-events:none;}
-.alert{font-size:.56rem;letter-spacing:.2em;padding:.2rem .6rem;border:1px solid;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);text-transform:uppercase;animation:alertIn .3s ease both;}
-.alert.info{border-color:var(--c);color:var(--c);}
-.alert.warn{border-color:var(--c2);color:var(--c2);}
-.alert.ok{border-color:var(--c3);color:var(--c3);}
-.alert.danger{border-color:var(--cr);color:var(--cr);}
-@keyframes alertIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
+/* ALERTS */
+.alerts{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) translateY(-90px);z-index:20;display:flex;flex-direction:column;gap:3px;align-items:center;pointer-events:none;}
+.alert{font-size:.52rem;letter-spacing:.18em;padding:.18rem .55rem;border:1px solid;background:rgba(0,0,0,.65);backdrop-filter:blur(8px);text-transform:uppercase;animation:alertIn .25s ease both;}
+.alert.info{border-color:rgba(0,229,255,.4);color:var(--c);}
+.alert.warn{border-color:rgba(255,109,0,.5);color:var(--c2);}
+.alert.ok{border-color:rgba(118,255,3,.4);color:var(--c3);}
+.alert.danger{border-color:rgba(255,23,68,.5);color:var(--cr);}
+@keyframes alertIn{from{opacity:0;transform:translateY(-5px);}to{opacity:1;transform:none;}}
 
-/* ── XR BUTTON ── */
-#xrbtn{
-  position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+/* GPS PROMPT BUTTON */
+#gpsBtn{
+  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
   background:transparent;border:1px solid var(--c);color:var(--c);
-  font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.3em;
-  padding:.55rem 1.2rem;cursor:pointer;text-transform:uppercase;
-  pointer-events:all;z-index:100;transition:all .2s;text-shadow:var(--glow);box-shadow:var(--glow);
+  font-family:'Orbitron',monospace;font-size:.6rem;letter-spacing:.28em;
+  padding:.5rem 1.1rem;cursor:pointer;text-transform:uppercase;
+  pointer-events:all;z-index:100;transition:all .2s;
+  text-shadow:var(--glow);box-shadow:var(--glow);display:none;
 }
-#xrbtn:hover{background:var(--c);color:#000;}
-#xrbtn.hidden{display:none;}
+#gpsBtn:hover{background:rgba(0,229,255,.1);}
 
-/* ── MAP WAYPOINT MARKER ── */
-.wp-marker{width:10px;height:10px;background:var(--c2);border-radius:50%;box-shadow:0 0 8px var(--c2);border:1px solid rgba(255,109,0,.5);}
-
-/* XR HUD SOURCE + MIRROR */
-#hud2d{display:none;}
-#hudMirror{
-  position:fixed;right:12px;bottom:12px;
-  width:260px;height:130px;
-  border:1px solid rgba(0,229,255,.25);
-  border-radius:12px;
-  background:rgba(0,0,0,.35);
-  display:none;
-  z-index:10000;
-}
+/* MAP WP MARKER */
+.wp-marker{width:9px;height:9px;background:var(--c2);border-radius:50%;box-shadow:0 0 6px var(--c2);}
 </style>
 </head>
-
 <body>
-
-<canvas id="hudMirror" width="260" height="130"></canvas>
-<canvas id="hud2d" width="1024" height="512"></canvas>
 
 <!-- BOOT -->
 <div id="boot">
   <div class="b-logo">JARVIS</div>
-  <div class="b-sub">HEADS UP DISPLAY · v5.0.0</div>
+  <div class="b-sub">HEADS UP DISPLAY · v5.1</div>
   <div class="b-bar-w"><div class="b-bar"></div></div>
   <div class="b-lines">
     <div class="bl">▸ INITIALIZING SENSOR ARRAY...</div>
@@ -208,14 +188,14 @@ body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;widt
   </div>
 </div>
 
-<!-- HUD (2D DOM version) -->
+<!-- HUD -->
 <div id="hud">
   <div class="scanlines"></div>
   <div class="vignette"></div>
-  <div class="frame"></div>
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
 
+  <!-- COMPASS -->
   <div class="compass-wrap">
     <div class="compass-bar">
       <div class="compass-track" id="compassTrack"></div>
@@ -224,6 +204,7 @@ body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;widt
     <div class="hdg-text" id="hdgText">HDG 000°</div>
   </div>
 
+  <!-- TL -->
   <div class="panel-tl">
     <div class="clock" id="clock">00:00:00</div>
     <div class="clock-sub" id="clockDate">-- --- ----</div>
@@ -232,6 +213,7 @@ body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;widt
     <div class="gforce" id="gforce">G: 1.00</div>
   </div>
 
+  <!-- TR -->
   <div class="panel-tr">
     <div class="stat-row"><div class="slbl">BAT</div><div class="sbar"><div class="sf g" id="batF" style="width:85%"></div></div><div class="sval" id="batV">85%</div></div>
     <div class="stat-row"><div class="slbl">SIG</div><div class="sbar"><div class="sf c" id="sigF" style="width:90%"></div></div><div class="sval" id="sigV">90%</div></div>
@@ -239,124 +221,108 @@ body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;widt
     <div class="stat-row"><div class="slbl">MEM</div><div class="sbar"><div class="sf o" id="memF" style="width:58%"></div></div><div class="sval" id="memV">58%</div></div>
   </div>
 
+  <!-- WEATHER -->
   <div class="weather-panel" id="weatherPanel" style="display:none">
     <div class="w-temp" id="wTemp">--°C</div>
     <div class="w-cond" id="wCond">LOADING</div>
-    <div class="w-row">
-      <span>WIND</span>
-      <span class="wind-arrow" id="windArrow">↑</span>
-      <span class="w-val" id="windSpd">--</span><span>km/h</span>
-    </div>
+    <div class="w-row"><span>WIND</span><span class="wind-arrow" id="windArrow">↑</span><span class="w-val" id="windSpd">--</span><span>km/h</span></div>
     <div class="w-row"><span>HUM</span><span class="w-val" id="wHum">--%</span></div>
     <div class="sunrise-row" id="sunRow">↑ -- · ↓ --</div>
   </div>
 
+  <!-- HORIZON -->
   <div class="horizon-wrap" id="horizonWrap">
-    <div class="pitch-mark" style="top:-30px"><div class="pm-line"></div><div class="pm-lbl">+5°</div></div>
-    <div class="pitch-mark" style="top:-60px"><div class="pm-line"></div><div class="pm-lbl">+10°</div></div>
+    <div class="pitch-mark" style="top:-28px"><div class="pm-line"></div><div class="pm-lbl">+5°</div></div>
+    <div class="pitch-mark" style="top:-56px"><div class="pm-line"></div><div class="pm-lbl">+10°</div></div>
     <div class="horizon" id="horizon">
       <div class="h-line"></div><div class="h-center"></div><div class="h-line"></div>
     </div>
-    <div class="pitch-mark" style="top:18px"><div class="pm-line"></div><div class="pm-lbl">-5°</div></div>
-    <div class="pitch-mark" style="top:48px"><div class="pm-line"></div><div class="pm-lbl">-10°</div></div>
+    <div class="pitch-mark" style="top:16px"><div class="pm-line"></div><div class="pm-lbl">-5°</div></div>
+    <div class="pitch-mark" style="top:44px"><div class="pm-line"></div><div class="pm-lbl">-10°</div></div>
   </div>
 
+  <!-- BL -->
   <div class="panel-bl">
     <div class="coord-row"><div class="clbl">LAT</div><div class="cval" id="lat">ACQUIRING</div></div>
     <div class="coord-row"><div class="clbl">LON</div><div class="cval" id="lon">ACQUIRING</div></div>
+    <div class="gps-status acquiring" id="gpsStatus">● GPS ACQUIRING</div>
     <div class="sys-status"><span class="sdot"></span>ALL SYSTEMS NOMINAL</div>
   </div>
 
+  <!-- BC -->
   <div class="panel-bc">
     <div class="hdg-big" id="hdgBig">N</div>
     <div class="hdg-deg" id="hdgDeg">000°</div>
   </div>
 
+  <!-- MINIMAP -->
   <div class="map-panel">
     <div class="map-lbl">TACTICAL · LIVE MAP</div>
-    <div style="position:relative;width:150px;height:150px;">
+    <div style="position:relative;width:140px;height:140px;">
       <div id="minimap"></div>
       <div class="map-overlay">
-        <div class="map-self-dot">
-          <div class="msd-ring"></div>
-          <div class="msd-inner"></div>
-        </div>
+        <div class="map-self-dot"><div class="msd-ring"></div><div class="msd-inner"></div></div>
         <div class="map-hdg-line" id="mapHdgLine"></div>
       </div>
     </div>
     <div class="waypoint-dist" id="wpDist"></div>
   </div>
 
+  <!-- WAYPOINTS -->
   <div class="wp-panel" id="wpPanel"></div>
 
+  <!-- THREAT -->
   <div class="threat-panel">
     <div class="threat-lbl">THREAT LEVEL</div>
     <div class="threat-bar"><div class="threat-fill" id="threatFill" style="width:5%"></div></div>
     <div class="threat-val" id="threatVal" style="color:var(--c3)">MINIMAL</div>
   </div>
 
+  <!-- DETECTIONS -->
   <div class="detect-panel" id="detectPanel"></div>
-  <canvas id="detCanvas"></canvas>
-  <video id="camFeed" autoplay playsinline muted></video>
 
+  <!-- ALERTS -->
   <div class="alerts" id="alerts"></div>
 </div>
 
-<button id="xrbtn" onclick="enterXR()">◈ ENTER AR MODE</button>
+<!-- GPS PROMPT (shown on iOS / blocked permissions) -->
+<button id="gpsBtn" onclick="requestGPS()">◈ ENABLE GPS</button>
 
 <script>
-/* =========================================================
-   EXISTING APP STATE
-========================================================= */
+/* ── STATE ── */
 var lat=null,lon=null,heading=0,speed=0;
-var map=null;
-var waypoints=[];
-var hasRealSensor=false;
-var demoHdg=0;
-var cocoModel=null;
-var detInterval=null;
+var map=null, waypoints=[];
+var hasRealSensor=false, demoHdg=0;
 var personCount=0;
-
+var fCPU=32, fMem=58, batPct=85, lastG=1.00;
 var weatherFetched=false;
-var weatherState = {
-  ok:false,
-  temp:null, cond:'', windSpd:null, windDeg:0, hum:null, sunrise:'--', sunset:'--'
-};
+var alertsState=[];
+var weatherState={ok:false,temp:null,cond:'',windSpd:null,windDeg:0,hum:null,sunrise:'--',sunset:'--'};
 
-var alertsState = []; // [{msg,type,ts}]
-function pushAlert(msg,type){
-  alertsState.unshift({msg:msg, type:type||'info', ts: Date.now()});
-  alertsState = alertsState.slice(0,6);
-}
+var DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 
-/* =========================================================
-   BOOT
-========================================================= */
+/* ── BOOT ── */
 setTimeout(function(){
   document.getElementById('boot').classList.add('gone');
   document.getElementById('hud').classList.add('on');
-  document.getElementById('xrbtn').style.opacity='1';
   initAll();
-},3800);
+},3600);
 
 function initAll(){
   startClock();
   buildCompass();
-  startGeo();
   startOrientation();
   startBattery();
   startSensors();
   startFakeCPU();
   initMap();
-  startDetection();
+  runFakeDetection();
   scheduleAlerts();
+  initGPS(); // GPS handled separately with proper permission flow
 }
 
-/* =========================================================
-   CLOCK
-========================================================= */
-var DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
-var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+/* ── CLOCK ── */
 function startClock(){
   function tick(){
     var n=new Date();
@@ -367,9 +333,7 @@ function startClock(){
 }
 function pad(n){return String(n).padStart(2,'0');}
 
-/* =========================================================
-   COMPASS + HEADING UI
-========================================================= */
+/* ── COMPASS ── */
 var CARDS={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
 var CARD_CLASS={180:'s',270:'w'};
 function buildCompass(){
@@ -383,18 +347,15 @@ function buildCompass(){
   }
   t.innerHTML=h;
 }
-
 function updateCompass(hdg){
   heading=hdg;
   var track=document.getElementById('compassTrack');
-  var IW=28;
-  var offset=-(hdg+180)*IW/5+(320/2);
-  track.style.transform='translateX('+offset+'px)';
+  track.style.transform='translateX('+(-(hdg+180)*28/5+(300/2))+'px)';
   document.getElementById('hdgText').textContent='HDG '+String(Math.round(hdg)).padStart(3,'0')+'°';
   document.getElementById('hdgBig').textContent=hdgToDir(hdg);
   document.getElementById('hdgDeg').textContent=String(Math.round(hdg)).padStart(3,'0')+'°';
   document.getElementById('mapHdgLine').style.transform='rotate('+hdg+'deg)';
-  updateWaypointDistances();
+  if(waypoints.length) renderWaypoints();
   updateThreat();
 }
 function hdgToDir(h){
@@ -402,154 +363,182 @@ function hdgToDir(h){
   return d[Math.round(h/22.5)%16];
 }
 
-/* =========================================================
-   ORIENTATION (DOM HUD + fallback sweep)
-========================================================= */
+/* ── ORIENTATION ── */
 function startOrientation(){
-  var req=typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function';
-  if(req){
-    document.getElementById('xrbtn').addEventListener('click',function once(){
-      DeviceOrientationEvent.requestPermission().then(function(p){
-        if(p==='granted') window.addEventListener('deviceorientation',onOrient);
-      });
-      document.getElementById('xrbtn').removeEventListener('click',once);
-    });
+  if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+    // iOS 13+ — request on first user gesture (GPS button or map tap)
+    window._needOrientPerm=true;
   } else {
     window.addEventListener('deviceorientation',onOrient);
   }
+}
+function maybeRequestOrientPerm(){
+  if(!window._needOrientPerm) return;
+  window._needOrientPerm=false;
+  DeviceOrientationEvent.requestPermission().then(function(p){
+    if(p==='granted') window.addEventListener('deviceorientation',onOrient);
+  }).catch(function(){});
 }
 function onOrient(e){
   hasRealSensor=true;
   var h=e.webkitCompassHeading||(e.alpha!=null?360-e.alpha:null);
   if(h!=null) updateCompass(h);
-  if(e.beta!=null||e.gamma!=null){
-    var roll=e.gamma||0;
-    document.getElementById('horizon').style.transform='rotate('+(-roll)+'deg)';
-  }
+  if(e.gamma!=null) document.getElementById('horizon').style.transform='rotate('+(-e.gamma)+'deg)';
 }
 setInterval(function(){
-  if(!hasRealSensor){
-    demoHdg=(demoHdg+0.3)%360;
-    updateCompass(demoHdg);
-  }
+  if(!hasRealSensor){demoHdg=(demoHdg+0.25)%360; updateCompass(demoHdg);}
 },50);
 
-/* =========================================================
-   GEO + SPEED
-========================================================= */
-function startGeo(){
-  if(!navigator.geolocation) return;
-  navigator.geolocation.watchPosition(function(pos){
-    lat=pos.coords.latitude;
-    lon=pos.coords.longitude;
-    speed=pos.coords.speed||0;
-    var kmh=(speed*3.6).toFixed(1);
-    document.getElementById('lat').textContent=lat.toFixed(6)+'°';
-    document.getElementById('lon').textContent=lon.toFixed(6)+'°';
-    document.getElementById('speedBig').textContent=kmh;
-    if(pos.coords.heading!=null&&!hasRealSensor) updateCompass(pos.coords.heading);
-    if(map) updateMapPos();
-    fetchWeather();
-  },function(){
-    lat=48.8566; lon=2.3522;
-    document.getElementById('lat').textContent='48.856600° [DEMO]';
-    document.getElementById('lon').textContent='2.352200° [DEMO]';
-    if(map) updateMapPos();
-    fetchWeather();
-  },{enableHighAccuracy:true,maximumAge:2000});
+/* ── GPS — proper permission flow ── */
+var geoWatchId=null;
+
+function initGPS(){
+  if(!navigator.geolocation){
+    setGPSStatus('UNAVAILABLE', false);
+    useDemoLocation();
+    return;
+  }
+
+  // Check if permission already granted (Permissions API where available)
+  if(navigator.permissions){
+    navigator.permissions.query({name:'geolocation'}).then(function(result){
+      if(result.state==='granted'){
+        startGeoWatch();
+      } else if(result.state==='prompt'){
+        // Show enable button on mobile; auto-attempt on desktop
+        var isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if(isMobile){
+          document.getElementById('gpsBtn').style.display='block';
+          useDemoLocation();
+        } else {
+          startGeoWatch();
+        }
+      } else {
+        // denied
+        setGPSStatus('DENIED', false);
+        document.getElementById('gpsBtn').style.display='block';
+        useDemoLocation();
+      }
+      result.onchange=function(){
+        if(result.state==='granted'){ document.getElementById('gpsBtn').style.display='none'; startGeoWatch(); }
+      };
+    }).catch(function(){ startGeoWatch(); }); // Permissions API not available, just try
+  } else {
+    startGeoWatch(); // No Permissions API, attempt directly
+  }
 }
 
-/* =========================================================
-   MAP + WAYPOINTS (DOM mode uses Leaflet)
-========================================================= */
+function requestGPS(){
+  maybeRequestOrientPerm();
+  document.getElementById('gpsBtn').style.display='none';
+  startGeoWatch();
+}
+
+function startGeoWatch(){
+  if(geoWatchId!=null) return; // already watching
+  setGPSStatus('ACQUIRING', true);
+  geoWatchId = navigator.geolocation.watchPosition(
+    onGeoSuccess,
+    onGeoError,
+    {enableHighAccuracy:true, maximumAge:2000, timeout:10000}
+  );
+}
+
+function onGeoSuccess(pos){
+  lat=pos.coords.latitude;
+  lon=pos.coords.longitude;
+  speed=pos.coords.speed||0;
+  var kmh=(speed*3.6).toFixed(1);
+  document.getElementById('lat').textContent=lat.toFixed(6)+'°';
+  document.getElementById('lon').textContent=lon.toFixed(6)+'°';
+  document.getElementById('speedBig').textContent=kmh;
+  setGPSStatus('LOCKED', true);
+  if(pos.coords.heading!=null && !hasRealSensor) updateCompass(pos.coords.heading);
+  if(map) map.setView([lat,lon],16);
+  fetchWeather();
+}
+
+function onGeoError(err){
+  var msgs={1:'DENIED',2:'UNAVAILABLE',3:'TIMEOUT'};
+  setGPSStatus(msgs[err.code]||'ERROR', false);
+  if(err.code===1) document.getElementById('gpsBtn').style.display='block';
+  useDemoLocation();
+}
+
+function useDemoLocation(){
+  if(lat!=null) return;
+  lat=48.8566; lon=2.3522;
+  document.getElementById('lat').textContent='48.856600° [SIM]';
+  document.getElementById('lon').textContent='2.352200° [SIM]';
+  if(map) map.setView([lat,lon],16);
+  fetchWeather();
+}
+
+function setGPSStatus(msg, locked){
+  var el=document.getElementById('gpsStatus');
+  el.textContent='● GPS '+msg;
+  el.className='gps-status '+(locked?'locked':'acquiring');
+}
+
+/* ── MAP + WAYPOINTS ── */
 function initMap(){
   map=L.map('minimap',{
     zoomControl:false,attributionControl:false,
-    dragging:false,scrollWheelZoom:false,doubleClickZoom:false,
-    keyboard:false,tap:false,zoom:16
+    dragging:false,scrollWheelZoom:false,doubleClickZoom:false,keyboard:false,tap:false,zoom:16
   }).setView([48.8566,2.3522],16);
-
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-
   document.getElementById('minimap').addEventListener('click',function(e){
     if(!map) return;
-    var rect=this.getBoundingClientRect();
-    var px=e.clientX-rect.left, py=e.clientY-rect.top;
-    var latlng=map.containerPointToLatLng([px,py]);
-    addWaypoint(latlng.lat,latlng.lng,'WP'+(waypoints.length+1));
+    var r=this.getBoundingClientRect();
+    var ll=map.containerPointToLatLng([e.clientX-r.left,e.clientY-r.top]);
+    addWaypoint(ll.lat,ll.lng,'WP'+(waypoints.length+1));
   });
-}
-function updateMapPos(){
-  if(lat==null||lon==null) return;
-  map.setView([lat,lon],16);
 }
 
 function addWaypoint(wlat,wlon,name){
-  var icon=L.divIcon({className:'',html:'<div class="wp-marker"></div>',iconSize:[10,10]});
-  var marker=L.marker([wlat,wlon],{icon:icon}).addTo(map);
-  waypoints.push({lat:wlat,lon:wlon,name:name,marker:marker});
+  var icon=L.divIcon({className:'',html:'<div class="wp-marker"></div>',iconSize:[9,9]});
+  waypoints.push({lat:wlat,lon:wlon,name:name,marker:L.marker([wlat,wlon],{icon:icon}).addTo(map)});
   renderWaypoints();
   addAlert('WAYPOINT SET: '+name,'info');
 }
 
-function dist(lat1,lon1,lat2,lon2){
-  var R=6371000;
-  var dLat=(lat2-lat1)*Math.PI/180;
-  var dLon=(lon2-lon1)*Math.PI/180;
-  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
-  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+function dist(a,b,c,d){
+  var R=6371000,dL=(c-a)*Math.PI/180,dN=(d-b)*Math.PI/180;
+  var x=Math.sin(dL/2)*Math.sin(dL/2)+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dN/2)*Math.sin(dN/2);
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
-function bearing(lat1,lon1,lat2,lon2){
-  var dLon=(lon2-lon1)*Math.PI/180;
-  var y=Math.sin(dLon)*Math.cos(lat2*Math.PI/180);
-  var x=Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180)-Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLon);
-  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+function bearing(a,b,c,d){
+  var dn=(d-b)*Math.PI/180;
+  var y=Math.sin(dn)*Math.cos(c*Math.PI/180);
+  var x=Math.cos(a*Math.PI/180)*Math.sin(c*Math.PI/180)-Math.sin(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.cos(dn);
+  return(Math.atan2(y,x)*180/Math.PI+360)%360;
 }
-
 function renderWaypoints(){
-  var panel=document.getElementById('wpPanel');
-  panel.innerHTML=waypoints.slice(-4).map(function(wp){
+  document.getElementById('wpPanel').innerHTML=waypoints.slice(-4).map(function(wp){
     var d=lat!=null?Math.round(dist(lat,lon,wp.lat,wp.lon))+'m':'---';
     var b=lat!=null?Math.round(bearing(lat,lon,wp.lat,wp.lon))+'°':'---';
     return '<div class="wp-item"><div class="wp-name">'+wp.name+'</div><div class="wp-info">'+d+' · '+b+'</div></div>';
   }).join('');
-}
-function updateWaypointDistances(){
-  if(waypoints.length) renderWaypoints();
-  if(waypoints.length&&lat!=null){
-    var nearest=waypoints.reduce(function(a,b){
-      return dist(lat,lon,a.lat,a.lon)<dist(lat,lon,b.lat,b.lon)?a:b;
-    });
-    var d=dist(lat,lon,nearest.lat,nearest.lon);
-    document.getElementById('wpDist').textContent=nearest.name+': '+(d<1000?Math.round(d)+'m':(d/1000).toFixed(1)+'km');
+  if(lat!=null&&waypoints.length){
+    var near=waypoints.reduce(function(a,b){return dist(lat,lon,a.lat,a.lon)<dist(lat,lon,b.lat,b.lon)?a:b;});
+    var d=dist(lat,lon,near.lat,near.lon);
+    document.getElementById('wpDist').textContent=near.name+': '+(d<1000?Math.round(d)+'m':(d/1000).toFixed(1)+'km');
   }
 }
 
-/* =========================================================
-   WEATHER
-========================================================= */
+/* ── WEATHER ── */
 function fetchWeather(){
-  if(weatherFetched||lat==null||lon==null) return;
+  if(weatherFetched||lat==null) return;
   weatherFetched=true;
-  var url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon
+  fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon
     +'&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code'
-    +'&daily=sunrise,sunset&timezone=auto&forecast_days=1';
-  fetch(url).then(function(r){return r.json();}).then(function(d){
-    var c=d.current;
-    var daily=d.daily;
-
-    weatherState.ok=true;
-    weatherState.temp=Math.round(c.temperature_2m);
-    weatherState.cond=wCode(c.weather_code);
-    weatherState.windSpd=Math.round(c.wind_speed_10m);
-    weatherState.hum=Math.round(c.relative_humidity_2m);
-    weatherState.windDeg=c.wind_direction_10m||0;
-
-    if(daily&&daily.sunrise&&daily.sunset){
-      weatherState.sunrise=daily.sunrise[0].split('T')[1];
-      weatherState.sunset=daily.sunset[0].split('T')[1];
-    }
-
+    +'&daily=sunrise,sunset&timezone=auto&forecast_days=1')
+  .then(function(r){return r.json();}).then(function(d){
+    var c=d.current, dd=d.daily;
+    weatherState={ok:true,temp:Math.round(c.temperature_2m),cond:wCode(c.weather_code),
+      windSpd:Math.round(c.wind_speed_10m),windDeg:c.wind_direction_10m||0,
+      hum:Math.round(c.relative_humidity_2m),
+      sunrise:dd?dd.sunrise[0].split('T')[1]:'--',sunset:dd?dd.sunset[0].split('T')[1]:'--'};
     document.getElementById('wTemp').textContent=weatherState.temp+'°C';
     document.getElementById('wCond').textContent=weatherState.cond;
     document.getElementById('windSpd').textContent=weatherState.windSpd;
@@ -557,71 +546,48 @@ function fetchWeather(){
     document.getElementById('windArrow').style.transform='rotate('+weatherState.windDeg+'deg)';
     document.getElementById('sunRow').textContent='↑ '+weatherState.sunrise+' · ↓ '+weatherState.sunset;
     document.getElementById('weatherPanel').style.display='flex';
-
     addAlert('WEATHER LOADED','ok');
   }).catch(function(){});
 }
-function wCode(code){
-  if(code===0) return 'CLEAR SKY';
-  if(code<=2) return 'PARTLY CLOUDY';
-  if(code<=3) return 'OVERCAST';
-  if(code<=49) return 'FOG';
-  if(code<=59) return 'DRIZZLE';
-  if(code<=69) return 'RAIN';
-  if(code<=79) return 'SNOW';
-  if(code<=82) return 'RAIN SHOWERS';
-  if(code<=86) return 'SNOW SHOWERS';
-  if(code<=99) return 'THUNDERSTORM';
-  return 'UNKNOWN';
+function wCode(c){
+  if(c===0)return'CLEAR SKY';if(c<=2)return'PARTLY CLOUDY';if(c<=3)return'OVERCAST';
+  if(c<=49)return'FOG';if(c<=59)return'DRIZZLE';if(c<=69)return'RAIN';
+  if(c<=79)return'SNOW';if(c<=82)return'RAIN SHOWERS';if(c<=86)return'SNOW SHOWERS';
+  if(c<=99)return'THUNDERSTORM';return'UNKNOWN';
 }
 
-/* =========================================================
-   BATTERY
-========================================================= */
-var batPct = 85;
+/* ── BATTERY ── */
 function startBattery(){
   if(!navigator.getBattery) return;
   navigator.getBattery().then(function(bat){
     function upd(){
-      var p=Math.round(bat.level*100);
-      batPct = p;
-      document.getElementById('batF').style.width=p+'%';
-      document.getElementById('batV').textContent=p+'%';
-      var cl=p>50?'sf g':p>20?'sf o':'sf r';
-      document.getElementById('batF').className=cl;
-      if(p<20) addAlert('LOW BATTERY '+p+'%','warn');
+      batPct=Math.round(bat.level*100);
+      document.getElementById('batF').style.width=batPct+'%';
+      document.getElementById('batV').textContent=batPct+'%';
+      document.getElementById('batF').className='sf '+(batPct>50?'g':batPct>20?'o':'r');
+      if(batPct<20) addAlert('LOW BATTERY '+batPct+'%','warn');
     }
-    upd();
-    bat.addEventListener('levelchange',upd);
+    upd(); bat.addEventListener('levelchange',upd);
   });
 }
 
-/* =========================================================
-   SENSORS / G-FORCE
-========================================================= */
-var lastG = 1.00;
+/* ── SENSORS ── */
 function startSensors(){
   if(!window.DeviceMotionEvent) return;
   window.addEventListener('devicemotion',function(e){
     if(!e.accelerationIncludingGravity) return;
-    var ax=e.accelerationIncludingGravity.x||0;
-    var ay=e.accelerationIncludingGravity.y||0;
-    var az=e.accelerationIncludingGravity.z||0;
-    var g=Math.sqrt(ax*ax+ay*ay+az*az)/9.81;
-    lastG = g;
-    document.getElementById('gforce').textContent='G: '+g.toFixed(2);
-    updateThreat(g);
+    var a=e.accelerationIncludingGravity;
+    lastG=Math.sqrt((a.x||0)*(a.x||0)+(a.y||0)*(a.y||0)+(a.z||0)*(a.z||0))/9.81;
+    document.getElementById('gforce').textContent='G: '+lastG.toFixed(2);
+    updateThreat();
   });
 }
 
-/* =========================================================
-   FAKE CPU/MEM (kept)
-========================================================= */
-var fCPU=32,fMem=58;
+/* ── FAKE CPU/MEM ── */
 function startFakeCPU(){
   setInterval(function(){
-    fCPU=Math.max(5,Math.min(95,fCPU+(Math.random()-.5)*10));
-    fMem=Math.max(30,Math.min(90,fMem+(Math.random()-.5)*3));
+    fCPU=Math.max(5,Math.min(95,fCPU+(Math.random()-.5)*8));
+    fMem=Math.max(30,Math.min(90,fMem+(Math.random()-.5)*2));
     document.getElementById('cpuF').style.width=fCPU+'%';
     document.getElementById('cpuV').textContent=Math.round(fCPU)+'%';
     document.getElementById('memF').style.width=fMem+'%';
@@ -629,14 +595,9 @@ function startFakeCPU(){
   },2500);
 }
 
-/* =========================================================
-   THREAT
-========================================================= */
-function updateThreat(gForce){
-  var t=5;
-  t+=personCount*15;
-  if(gForce&&gForce>1.5) t+=Math.min((gForce-1)*20,30);
-  if(speed*3.6>20) t+=10;
+/* ── THREAT ── */
+function updateThreat(){
+  var t=5+personCount*15+(lastG>1.5?Math.min((lastG-1)*20,30):0)+(speed*3.6>20?10:0);
   t=Math.min(t,100);
   document.getElementById('threatFill').style.width=t+'%';
   var el=document.getElementById('threatVal');
@@ -646,589 +607,37 @@ function updateThreat(gForce){
   else{el.textContent='CRITICAL';el.style.color='var(--cr)';}
 }
 
-/* =========================================================
-   OBJECT DETECTION (kept; XR canvas shows count + top labels)
-========================================================= */
-var detTop = []; // [{cls,conf,isPerson}]
-function startDetection(){
-  var video=document.getElementById('camFeed');
-  if(typeof cocoSsd==='undefined') return;
-  cocoSsd.load().then(function(model){
-    cocoModel=model;
-    addAlert('OBJECT DETECTION READY','ok');
-    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false})
-    .then(function(stream){
-      video.srcObject=stream;
-      video.onloadedmetadata=function(){ runDetection(); };
-    }).catch(function(){
-      addAlert('CAMERA ACCESS DENIED','warn');
-      runFakeDetection();
-    });
-  }).catch(function(){ runFakeDetection(); });
-}
-function runDetection(){
-  if(!cocoModel) return;
-  var video=document.getElementById('camFeed');
-  var panel=document.getElementById('detectPanel');
-
-  function detect(){
-    cocoModel.detect(video).then(function(preds){
-      personCount=preds.filter(function(p){return p.class==='person';}).length;
-      detTop = preds.slice(0,6).map(function(p){
-        return {cls:p.class, conf:Math.round(p.score*100), isPerson:(p.class==='person')};
-      });
-
-      var html='';
-      detTop.forEach(function(p){
-        html+='<div class="det-item '+(p.isPerson?'person':'object')+'">'
-          +(p.isPerson?'👤':'◈')+' '+p.cls.toUpperCase()
-          +' <span class="det-conf">'+p.conf+'%</span>'
-          +'</div>';
-      });
-      panel.innerHTML=html;
-      updateThreat();
-    }).catch(function(){});
-  }
-
-  detInterval=setInterval(detect,1200);
-}
-var fakeDetObjs=['CHAIR','LAPTOP','BOTTLE','PHONE','BACKPACK','MONITOR'];
-var fakeDetIdx=0;
+/* ── FAKE DETECTIONS (no camera needed) ── */
+var fakeObjs=['CHAIR','LAPTOP','BOTTLE','PHONE','BACKPACK','MONITOR'],fakeIdx=0;
 function runFakeDetection(){
   setInterval(function(){
-    var panel=document.getElementById('detectPanel');
-    var items=[];
-    var n=Math.floor(Math.random()*3)+1;
-    detTop = [];
+    var panel=document.getElementById('detectPanel'),items=[],n=Math.floor(Math.random()*3)+1;
     for(var i=0;i<n;i++){
-      var obj=fakeDetObjs[(fakeDetIdx+i)%fakeDetObjs.length];
+      var obj=fakeObjs[(fakeIdx+i)%fakeObjs.length];
       var conf=Math.round(70+Math.random()*25);
-      detTop.push({cls:obj.toLowerCase(), conf:conf, isPerson:false});
       items.push('<div class="det-item object">◈ '+obj+' <span class="det-conf">'+conf+'%</span></div>');
     }
-    fakeDetIdx=(fakeDetIdx+1)%fakeDetObjs.length;
+    fakeIdx=(fakeIdx+1)%fakeObjs.length;
     panel.innerHTML=items.join('');
   },3000);
 }
 
-/* =========================================================
-   ALERTS
-========================================================= */
+/* ── ALERTS ── */
 function addAlert(msg,type){
-  pushAlert(msg,type);
+  alertsState.unshift({msg:msg,type:type||'info',ts:Date.now()});
+  alertsState=alertsState.slice(0,5);
   var el=document.createElement('div');
   el.className='alert '+(type||'info');
   el.textContent=msg;
   document.getElementById('alerts').appendChild(el);
-  setTimeout(function(){
-    el.style.transition='opacity .4s';
-    el.style.opacity='0';
-    setTimeout(function(){el.remove();},400);
-  },3500);
+  setTimeout(function(){el.style.transition='opacity .35s';el.style.opacity='0';setTimeout(function(){el.remove();},350);},3000);
 }
 function scheduleAlerts(){
   setTimeout(function(){addAlert('HUD ONLINE','ok');},200);
-  setTimeout(function(){addAlert('SENSORS ACTIVE','ok');},1000);
-  setTimeout(function(){addAlert('GPS ACQUIRING...','info');},1800);
-  setTimeout(function(){addAlert('TAP MAP TO DROP WAYPOINT','info');},6000);
+  setTimeout(function(){addAlert('SENSORS ACTIVE','ok');},900);
+  setTimeout(function(){addAlert('GPS ACQUIRING...','info');},1700);
+  setTimeout(function(){addAlert('TAP MAP TO DROP WAYPOINT','info');},5500);
 }
-
-/* =========================================================
-   XR HUD (HEAD-LOCKED) — THE ACTUAL FIX APPLIED HERE
-========================================================= */
-var xrSession=null, xrRefSpace=null, xrLayer=null, gl=null;
-var prog=null, vbo=null, ibo=null, tex=null;
-var lastUpload=0;
-var mirrorOn=false;
-var hudCanvas=document.getElementById('hud2d');
-var hudCtx=hudCanvas.getContext('2d',{alpha:true});
-var mirrorCanvas=document.getElementById('hudMirror');
-var mirrorCtx=mirrorCanvas.getContext('2d');
-
-function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
-function pad3(n){return String(Math.round(n)).padStart(3,'0');}
-function dirFromHeading(h){
-  var d=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  return d[Math.round(h/22.5)%16];
-}
-function rr(ctx,x,y,w,h,r){
-  var rr=Math.min(r,w/2,h/2);
-  ctx.beginPath();
-  ctx.moveTo(x+rr,y);
-  ctx.arcTo(x+w,y,x+w,y+h,rr);
-  ctx.arcTo(x+w,y+h,x,y+h,rr);
-  ctx.arcTo(x,y+h,x,y,rr);
-  ctx.arcTo(x,y,x+w,y,rr);
-  ctx.closePath();
-}
-
-/* -------- column-major mat4 (WebXR/WebGL compatible) -------- */
-function mat4Identity(){
-  var m=new Float32Array(16);
-  m[0]=1;m[5]=1;m[10]=1;m[15]=1;
-  return m;
-}
-function mat4Mul(a,b){
-  var out=new Float32Array(16);
-  var a00=a[0],a01=a[1],a02=a[2],a03=a[3];
-  var a10=a[4],a11=a[5],a12=a[6],a13=a[7];
-  var a20=a[8],a21=a[9],a22=a[10],a23=a[11];
-  var a30=a[12],a31=a[13],a32=a[14],a33=a[15];
-  var b0,b1,b2,b3;
-
-  b0=b[0];b1=b[1];b2=b[2];b3=b[3];
-  out[0]=a00*b0+a10*b1+a20*b2+a30*b3;
-  out[1]=a01*b0+a11*b1+a21*b2+a31*b3;
-  out[2]=a02*b0+a12*b1+a22*b2+a32*b3;
-  out[3]=a03*b0+a13*b1+a23*b2+a33*b3;
-
-  b0=b[4];b1=b[5];b2=b[6];b3=b[7];
-  out[4]=a00*b0+a10*b1+a20*b2+a30*b3;
-  out[5]=a01*b0+a11*b1+a21*b2+a31*b3;
-  out[6]=a02*b0+a12*b1+a22*b2+a32*b3;
-  out[7]=a03*b0+a13*b1+a23*b2+a33*b3;
-
-  b0=b[8];b1=b[9];b2=b[10];b3=b[11];
-  out[8]=a00*b0+a10*b1+a20*b2+a30*b3;
-  out[9]=a01*b0+a11*b1+a21*b2+a31*b3;
-  out[10]=a02*b0+a12*b1+a22*b2+a32*b3;
-  out[11]=a03*b0+a13*b1+a23*b2+a33*b3;
-
-  b0=b[12];b1=b[13];b2=b[14];b3=b[15];
-  out[12]=a00*b0+a10*b1+a20*b2+a30*b3;
-  out[13]=a01*b0+a11*b1+a21*b2+a31*b3;
-  out[14]=a02*b0+a12*b1+a22*b2+a32*b3;
-  out[15]=a03*b0+a13*b1+a23*b2+a33*b3;
-  return out;
-}
-function mat4Translate(x,y,z){
-  var m=mat4Identity();
-  m[12]=x;m[13]=y;m[14]=z;
-  return m;
-}
-function mat4Scale(x,y,z){
-  var m=mat4Identity();
-  m[0]=x;m[5]=y;m[10]=z;
-  return m;
-}
-
-/* -------- 2D canvas HUD renderer (XR version) -------- */
-function drawHud2D(){
-  var w=hudCanvas.width, h=hudCanvas.height;
-  hudCtx.clearRect(0,0,w,h);
-
-  // frame panel
-  hudCtx.save();
-  hudCtx.globalAlpha=0.88;
-  var g=hudCtx.createLinearGradient(0,0,w,0);
-  g.addColorStop(0,'rgba(0,229,255,0.14)');
-  g.addColorStop(0.5,'rgba(0,0,0,0.03)');
-  g.addColorStop(1,'rgba(0,229,255,0.14)');
-  hudCtx.fillStyle=g;
-  rr(hudCtx,18,18,w-36,h-36,22);
-  hudCtx.fill();
-  hudCtx.restore();
-
-  hudCtx.save();
-  hudCtx.strokeStyle='rgba(0,229,255,0.72)';
-  hudCtx.lineWidth=2.5;
-  rr(hudCtx,18,18,w-36,h-36,22);
-  hudCtx.stroke();
-  hudCtx.restore();
-
-  // scanlines
-  hudCtx.save();
-  hudCtx.globalAlpha=0.07;
-  hudCtx.fillStyle='#00e5ff';
-  for(var y=18;y<h-18;y+=4) hudCtx.fillRect(18,y,w-36,1);
-  hudCtx.restore();
-
-  // top left: title + time
-  var d=new Date();
-  var timeStr=pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
-  hudCtx.save();
-  hudCtx.fillStyle='rgba(0,229,255,0.95)';
-  hudCtx.shadowColor='rgba(0,229,255,0.55)';
-  hudCtx.shadowBlur=12;
-  hudCtx.font='900 38px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText('JARVIS', 52, 72);
-  hudCtx.font='800 40px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText(timeStr, 52, 126);
-  hudCtx.shadowBlur=0;
-  hudCtx.font='700 18px "Share Tech Mono", ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillStyle='rgba(0,229,255,0.65)';
-  hudCtx.fillText(DAYS[d.getDay()]+' '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear(), 52, 154);
-  hudCtx.restore();
-
-  // compass (center-top)
-  var hdg=heading||0;
-  var dir=dirFromHeading(hdg);
-  hudCtx.save();
-  hudCtx.fillStyle='rgba(0,229,255,0.92)';
-  hudCtx.shadowColor='rgba(0,229,255,0.55)';
-  hudCtx.shadowBlur=12;
-  hudCtx.font='900 56px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText(dir+' '+pad3(hdg)+'°', w/2-190, 118);
-  hudCtx.restore();
-
-  // speed + G force
-  var kmh = speed*3.6;
-  hudCtx.save();
-  hudCtx.fillStyle='rgba(118,255,3,0.95)';
-  hudCtx.shadowColor='rgba(118,255,3,0.55)';
-  hudCtx.shadowBlur=10;
-  hudCtx.font='900 44px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText((isFinite(kmh)?kmh.toFixed(1):'0.0')+' KM/H', 52, 220);
-  hudCtx.shadowBlur=0;
-  hudCtx.fillStyle='rgba(255,109,0,0.90)';
-  hudCtx.font='800 22px "Share Tech Mono", ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText('G: '+(isFinite(lastG)?lastG.toFixed(2):'1.00'), 52, 252);
-  hudCtx.restore();
-
-  // coords
-  hudCtx.save();
-  hudCtx.fillStyle='rgba(0,229,255,0.85)';
-  hudCtx.font='800 22px "Share Tech Mono", ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText('LAT '+(lat!=null?lat.toFixed(6):'ACQUIRING'), 52, h-104);
-  hudCtx.fillText('LON '+(lon!=null?lon.toFixed(6):'ACQUIRING'), 52, h-76);
-  hudCtx.restore();
-
-  // status bars (top-right)
-  hudCtx.save();
-  var x=w-360, y=62;
-  function bar(lbl, pct, color){
-    hudCtx.fillStyle='rgba(0,229,255,0.55)';
-    hudCtx.font='800 18px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-    hudCtx.fillText(lbl, x, y);
-    hudCtx.fillStyle='rgba(0,229,255,0.18)';
-    hudCtx.fillRect(x+50,y-14,160,8);
-    hudCtx.fillStyle=color;
-    hudCtx.fillRect(x+50,y-14,160*clamp(pct,0,100)/100,8);
-    hudCtx.fillStyle='rgba(0,229,255,0.90)';
-    hudCtx.font='800 18px "Share Tech Mono", ui-monospace, Menlo, Consolas, monospace';
-    hudCtx.fillText(Math.round(pct)+'%', x+220, y);
-    y+=28;
-  }
-  bar('BAT', (batPct!=null?batPct:85), 'rgba(118,255,3,0.90)');
-  bar('SIG', 90, 'rgba(0,229,255,0.90)');
-  bar('CPU', fCPU, 'rgba(255,109,0,0.90)');
-  bar('MEM', fMem, 'rgba(255,109,0,0.90)');
-  hudCtx.restore();
-
-  // weather (right, under bars)
-  if(weatherState.ok){
-    hudCtx.save();
-    hudCtx.fillStyle='rgba(0,229,255,0.90)';
-    hudCtx.shadowColor='rgba(0,229,255,0.45)';
-    hudCtx.shadowBlur=8;
-    hudCtx.font='900 36px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-    hudCtx.fillText(weatherState.temp+'°C', w-280, 190);
-    hudCtx.shadowBlur=0;
-    hudCtx.fillStyle='rgba(0,229,255,0.65)';
-    hudCtx.font='800 18px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-    hudCtx.fillText(weatherState.cond, w-280, 216);
-    hudCtx.font='700 18px "Share Tech Mono", ui-monospace, Menlo, Consolas, monospace';
-    hudCtx.fillText('WIND '+weatherState.windSpd+' km/h', w-280, 244);
-    hudCtx.fillText('HUM  '+weatherState.hum+'%', w-280, 268);
-    hudCtx.fillText('↑ '+weatherState.sunrise+'  ↓ '+weatherState.sunset, w-280, 292);
-    hudCtx.restore();
-  }
-
-  // threat bar (bottom-left-ish)
-  var t=5 + personCount*15 + ((lastG>1.5)?Math.min((lastG-1)*20,30):0) + ((kmh>20)?10:0);
-  t=clamp(t,0,100);
-  hudCtx.save();
-  hudCtx.fillStyle='rgba(0,229,255,0.20)';
-  hudCtx.fillRect(52, h-168, 240, 12);
-  var c = (t<20)?'rgba(118,255,3,0.90)' : (t<50)?'rgba(0,229,255,0.90)' : (t<75)?'rgba(255,109,0,0.90)' : 'rgba(255,23,68,0.90)';
-  hudCtx.fillStyle=c;
-  hudCtx.fillRect(52, h-168, 240*(t/100), 12);
-  hudCtx.fillStyle='rgba(0,229,255,0.70)';
-  hudCtx.font='800 18px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText('THREAT '+Math.round(t)+'%', 52, h-178);
-  hudCtx.restore();
-
-  // detections list (right-middle)
-  if(detTop && detTop.length){
-    hudCtx.save();
-    hudCtx.fillStyle='rgba(0,229,255,0.70)';
-    hudCtx.font='800 18px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-    hudCtx.fillText('DETECTIONS', w-280, h/2-80);
-    var yy=h/2-50;
-    detTop.slice(0,6).forEach(function(p){
-      hudCtx.fillStyle = p.isPerson ? 'rgba(255,23,68,0.95)' : 'rgba(0,229,255,0.85)';
-      hudCtx.font='700 18px "Share Tech Mono", ui-monospace, Menlo, Consolas, monospace';
-      hudCtx.fillText((p.isPerson?'👤 ':'◈ ')+String(p.cls).toUpperCase()+' '+p.conf+'%', w-280, yy);
-      yy+=22;
-    });
-    hudCtx.restore();
-  }
-
-  // alerts (center-top, small stack)
-  if(alertsState.length){
-    hudCtx.save();
-    var ax=w/2-220, ay=160;
-    alertsState.slice(0,3).forEach(function(a,i){
-      var col = a.type==='ok'?'rgba(118,255,3,0.95)' : a.type==='warn'?'rgba(255,109,0,0.95)' : a.type==='danger'?'rgba(255,23,68,0.95)' : 'rgba(0,229,255,0.92)';
-      hudCtx.fillStyle='rgba(0,0,0,0.55)';
-      hudCtx.fillRect(ax, ay+i*28, 440, 22);
-      hudCtx.strokeStyle=col;
-      hudCtx.strokeRect(ax, ay+i*28, 440, 22);
-      hudCtx.fillStyle=col;
-      hudCtx.font='800 16px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-      hudCtx.fillText(a.msg, ax+10, ay+16+i*28);
-    });
-    hudCtx.restore();
-  }
-
-  // XR minimap radar (bottom-right)
-  hudCtx.save();
-  var mx=w-240, my=h-170, r=70;
-  hudCtx.strokeStyle='rgba(0,229,255,0.45)';
-  hudCtx.lineWidth=2;
-  hudCtx.beginPath(); hudCtx.arc(mx,my,r,0,Math.PI*2); hudCtx.stroke();
-  hudCtx.globalAlpha=0.35;
-  hudCtx.beginPath(); hudCtx.arc(mx,my,r*0.66,0,Math.PI*2); hudCtx.stroke();
-  hudCtx.beginPath(); hudCtx.arc(mx,my,r*0.33,0,Math.PI*2); hudCtx.stroke();
-  hudCtx.globalAlpha=1;
-
-  // heading line
-  var ang = (heading||0) * Math.PI/180;
-  var lx = mx + Math.sin(ang)*r;
-  var ly = my - Math.cos(ang)*r;
-  hudCtx.strokeStyle='rgba(0,229,255,0.9)';
-  hudCtx.beginPath(); hudCtx.moveTo(mx,my); hudCtx.lineTo(lx,ly); hudCtx.stroke();
-
-  // waypoints as dots (relative bearing)
-  if(lat!=null && waypoints.length){
-    var maxD=500; // meters scale
-    waypoints.slice(-6).forEach(function(wp){
-      var d=dist(lat,lon,wp.lat,wp.lon);
-      var b=bearing(lat,lon,wp.lat,wp.lon);
-      var rel=((b - heading + 540)%360)-180; // -180..180
-      var rr0=Math.min(r, (d/maxD)*r);
-      var a2 = (rel) * Math.PI/180;
-      var px = mx + Math.sin(a2)*rr0;
-      var py = my - Math.cos(a2)*rr0;
-      hudCtx.fillStyle='rgba(255,109,0,0.95)';
-      hudCtx.beginPath(); hudCtx.arc(px,py,4,0,Math.PI*2); hudCtx.fill();
-    });
-  }
-  hudCtx.fillStyle='rgba(0,229,255,0.65)';
-  hudCtx.font='800 14px Orbitron, ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText('RADAR', mx-26, my-r-10);
-  hudCtx.restore();
-}
-
-/* -------- WebGL shader utils -------- */
-function compileShader(gl, type, src){
-  var sh=gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
-    var info=gl.getShaderInfoLog(sh);
-    gl.deleteShader(sh);
-    throw new Error(info||'shader compile fail');
-  }
-  return sh;
-}
-function createProgram(gl, vsSrc, fsSrc){
-  var vs=compileShader(gl, gl.VERTEX_SHADER, vsSrc);
-  var fs=compileShader(gl, gl.FRAGMENT_SHADER, fsSrc);
-  var p=gl.createProgram();
-  gl.attachShader(p,vs); gl.attachShader(p,fs);
-  gl.linkProgram(p);
-  gl.deleteShader(vs); gl.deleteShader(fs);
-  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
-    var info=gl.getProgramInfoLog(p);
-    gl.deleteProgram(p);
-    throw new Error(info||'program link fail');
-  }
-  return p;
-}
-
-function initXRGL(){
-  var vsSrc=
-    'attribute vec3 aPos;attribute vec2 aUV;uniform mat4 uMVP;varying vec2 vUV;'
-  + 'void main(){vUV=aUV;gl_Position=uMVP*vec4(aPos,1.0);}';
-
-  var fsSrc=
-    'precision mediump float;varying vec2 vUV;uniform sampler2D uTex;'
-  + 'void main(){gl_FragColor=texture2D(uTex,vUV);}';
-
-  prog=createProgram(gl,vsSrc,fsSrc);
-  prog.aPos=gl.getAttribLocation(prog,'aPos');
-  prog.aUV =gl.getAttribLocation(prog,'aUV');
-  prog.uMVP=gl.getUniformLocation(prog,'uMVP');
-  prog.uTex=gl.getUniformLocation(prog,'uTex');
-
-  var verts=new Float32Array([
-    -0.5,-0.5,0,  0,1,
-     0.5,-0.5,0,  1,1,
-     0.5, 0.5,0,  1,0,
-    -0.5, 0.5,0,  0,0
-  ]);
-  var inds=new Uint16Array([0,1,2, 0,2,3]);
-
-  vbo=gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
-  gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);
-
-  ibo=gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,inds,gl.STATIC_DRAW);
-
-  tex=gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,hudCanvas.width,hudCanvas.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-
-  gl.useProgram(prog);
-  gl.uniform1i(prog.uTex,0);
-}
-
-function uploadHUDTexture(nowMs){
-  if(nowMs-lastUpload < 33) return;
-  lastUpload=nowMs;
-  drawHud2D();
-
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);
-  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,hudCanvas);
-
-  if(mirrorOn){
-    mirrorCtx.clearRect(0,0,mirrorCanvas.width,mirrorCanvas.height);
-    mirrorCtx.drawImage(hudCanvas,0,0,mirrorCanvas.width,mirrorCanvas.height);
-  }
-}
-
-function xrFrame(t, frame){
-  if(!xrSession) return;
-  xrSession.requestAnimationFrame(xrFrame);
-
-  var pose=frame.getViewerPose(xrRefSpace);
-  if(!pose) return;
-
-  uploadHUDTexture(t);
-
-  gl.bindFramebuffer(gl.FRAMEBUFFER, xrLayer.framebuffer);
-  gl.disable(gl.DEPTH_TEST);
-  gl.disable(gl.CULL_FACE);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-  gl.clearColor(0,0,0,0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-
-  gl.useProgram(prog);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
-
-  var stride=5*4;
-  gl.enableVertexAttribArray(prog.aPos);
-  gl.vertexAttribPointer(prog.aPos,3,gl.FLOAT,false,stride,0);
-  gl.enableVertexAttribArray(prog.aUV);
-  gl.vertexAttribPointer(prog.aUV,2,gl.FLOAT,false,stride,3*4);
-
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D,tex);
-
-  // head-locked: model = viewerPose * translate(offset) * scale(size)
-  var viewerM = pose.transform.matrix; // column-major Float32Array
-  var offsetM = mat4Mul(mat4Translate(0.0, -0.10, -1.10), mat4Scale(1.35, 0.68, 1.0));
-  var modelM  = mat4Mul(viewerM, offsetM);
-
-  for (var i=0;i<pose.views.length;i++){
-    var view = pose.views[i];
-    var vp = xrLayer.getViewport(view);
-    gl.viewport(vp.x, vp.y, vp.width, vp.height);
-
-    var projM = view.projectionMatrix;
-    var viewM = view.transform.inverse.matrix;
-    var mvp   = mat4Mul(projM, mat4Mul(viewM, modelM));
-
-    gl.uniformMatrix4fv(prog.uMVP, false, mvp);
-    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
-  }
-}
-
-async function enterXR(){
-  var btn=document.getElementById('xrbtn');
-
-  if(xrSession){
-    try{ await xrSession.end(); }catch(_){}
-    return;
-  }
-
-  if(!navigator.xr){ addAlert('WebXR NOT AVAILABLE','warn'); return; }
-
-  try{
-    var arOk = await navigator.xr.isSessionSupported('immersive-ar');
-    if(!arOk){ addAlert('IMMERSIVE-AR NOT SUPPORTED','warn'); return; }
-
-    xrSession = await navigator.xr.requestSession('immersive-ar', {
-      requiredFeatures: ['local'],
-      optionalFeatures: ['local-floor']
-    });
-
-    btn.textContent='◈ EXIT AR';
-    addAlert('XR HUD ACTIVE','ok');
-
-    // Hide DOM HUD during XR; XR HUD is drawn as a quad
-    document.getElementById('hud').style.display='none';
-    document.getElementById('boot').style.display='none';
-    document.body.style.background='transparent';
-
-    // XR GL
-    gl = document.createElement('canvas').getContext('webgl', { xrCompatible:true, alpha:true, antialias:true, premultipliedAlpha:true });
-    xrLayer = new XRWebGLLayer(xrSession, gl, { alpha:true });
-    xrSession.updateRenderState({ baseLayer: xrLayer });
-
-    try{
-      xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
-    } catch {
-      xrRefSpace = await xrSession.requestReferenceSpace('local');
-    }
-
-    initXRGL();
-
-    xrSession.addEventListener('end', function(){
-      xrSession=null; xrRefSpace=null; xrLayer=null;
-      // Restore DOM HUD
-      document.getElementById('hud').style.display='';
-      document.getElementById('hud').classList.add('on');
-      document.body.style.background='#000';
-      btn.textContent='◈ ENTER AR MODE';
-      addAlert('XR ENDED','info');
-    });
-
-    xrSession.requestAnimationFrame(xrFrame);
-
-  } catch(e){
-    addAlert('XR ERROR: '+e.message,'warn');
-  }
-}
-
-/* optional: tap 5 times on button to toggle mirror */
-(function(){
-  var taps=0, t0=0;
-  document.getElementById('xrbtn').addEventListener('click',function(){
-    var now=Date.now();
-    if(now-t0>900){taps=0;}
-    t0=now; taps++;
-    if(taps>=5){
-      taps=0;
-      mirrorOn=!mirrorOn;
-      mirrorCanvas.style.display=mirrorOn?'block':'none';
-      addAlert('HUD MIRROR '+(mirrorOn?'ON':'OFF'),'info');
-    }
-  });
-})();
 </script>
 </body>
 </html>
