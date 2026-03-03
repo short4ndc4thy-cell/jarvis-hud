@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HUD // ONLINE</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&display=swap');
+:root{
+  --c:#00e5ff;--c2:#ff6d00;--c3:#76ff03;--cr:#ff1744;
+  --dim:rgba(0,229,255,0.07);--stroke:rgba(0,229,255,0.3);
+  --glow:0 0 10px rgba(0,229,255,.55),0 0 22px rgba(0,229,255,.18);
+  --glow2:0 0 10px rgba(255,109,0,.55);
+  --glow3:0 0 8px rgba(118,255,3,.5);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;width:100vw;height:100vh;overflow:hidden;}
+
+/* ── BOOT ── */
+#boot{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .6s ease;}
+#boot.gone{opacity:0;pointer-events:none;}
+.b-logo{font-family:'Orbitron',monospace;font-size:2.2rem;font-weight:900;letter-spacing:.45em;color:var(--c);text-shadow:var(--glow);animation:fi .5s ease .1s both;}
+.b-sub{font-size:.6rem;letter-spacing:.5em;color:rgba(0,229,255,.45);margin-top:.4rem;animation:fi .5s ease .4s both;}
+.b-bar-w{width:280px;height:2px;background:rgba(0,229,255,.1);margin-top:1.8rem;overflow:hidden;animation:fi .3s ease .7s both;}
+.b-bar{height:100%;background:var(--c);box-shadow:var(--glow);animation:bbar 2.4s ease .8s both;}
+@keyframes bbar{from{width:0}to{width:100%}}
+.b-lines{margin-top:1.2rem;font-size:.52rem;color:rgba(0,229,255,.38);letter-spacing:.08em;line-height:2;width:280px;}
+.bl{animation:fi .2s ease both;}
+.bl:nth-child(1){animation-delay:1s}.bl:nth-child(2){animation-delay:1.3s}.bl:nth-child(3){animation-delay:1.6s}
+.bl:nth-child(4){animation-delay:1.9s}.bl:nth-child(5){animation-delay:2.2s}.bl:nth-child(6){animation-delay:2.5s}
+@keyframes fi{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+
+/* ── HUD WRAPPER ── */
+#hud{position:fixed;inset:0;opacity:0;pointer-events:none;transition:opacity .8s ease;}
+#hud.on{opacity:1;}
+
+/* layers */
+.scanlines{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,229,255,.006) 2px,rgba(0,229,255,.006) 4px);pointer-events:none;z-index:2;}
+.vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.55) 100%);pointer-events:none;z-index:1;}
+.frame{position:absolute;inset:0;border:1px solid rgba(0,229,255,.1);box-shadow:inset 0 0 80px rgba(0,229,255,.03);pointer-events:none;z-index:3;}
+
+/* corners */
+.corner{position:absolute;width:55px;height:55px;border-color:var(--c);border-style:solid;opacity:.55;z-index:3;}
+.corner.tl{top:14px;left:14px;border-width:2px 0 0 2px;}
+.corner.tr{top:14px;right:14px;border-width:2px 2px 0 0;}
+.corner.bl{bottom:14px;left:14px;border-width:0 0 2px 2px;}
+.corner.br{bottom:14px;right:14px;border-width:0 2px 2px 0;}
+
+/* ── COMPASS ── */
+.compass-wrap{position:absolute;top:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;z-index:10;}
+.compass-bar{position:relative;width:320px;height:26px;overflow:hidden;border:1px solid rgba(0,229,255,.2);background:rgba(0,0,0,.5);backdrop-filter:blur(6px);}
+.compass-track{position:absolute;top:0;height:100%;display:flex;align-items:center;white-space:nowrap;transition:transform .08s linear;}
+.cd{font-size:.52rem;color:rgba(0,229,255,.45);padding:0 5px;letter-spacing:.04em;}
+.cd.card{color:var(--c);font-weight:700;font-size:.62rem;text-shadow:var(--glow);}
+.cd.card.s,.cd.card.w{color:var(--c2);}
+.compass-pin{position:absolute;top:0;left:50%;transform:translateX(-50%);width:1px;height:100%;background:var(--c);box-shadow:var(--glow);}
+.compass-pin::before{content:'▼';position:absolute;top:-9px;left:50%;transform:translateX(-50%);font-size:.45rem;color:var(--c);}
+.hdg-text{font-family:'Orbitron',monospace;font-size:.65rem;font-weight:700;letter-spacing:.2em;color:var(--c);text-shadow:var(--glow);}
+
+/* ── TOP LEFT: CLOCK + SPEED ── */
+.panel-tl{position:absolute;top:20px;left:20px;z-index:10;display:flex;flex-direction:column;gap:3px;}
+.clock{font-family:'Orbitron',monospace;font-size:1.5rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.1em;line-height:1;}
+.clock-sub{font-size:.55rem;color:rgba(0,229,255,.55);letter-spacing:.18em;text-transform:uppercase;}
+.speed-big{font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:700;color:var(--c3);text-shadow:var(--glow3);letter-spacing:.1em;margin-top:6px;}
+.speed-unit{font-size:.48rem;color:rgba(118,255,3,.5);letter-spacing:.3em;}
+.gforce{font-size:.55rem;color:var(--c2);letter-spacing:.1em;margin-top:2px;}
+
+/* ── TOP RIGHT: STATS ── */
+.panel-tr{position:absolute;top:20px;right:20px;z-index:10;display:flex;flex-direction:column;gap:5px;align-items:flex-end;}
+.stat-row{display:flex;align-items:center;gap:7px;}
+.slbl{font-size:.48rem;color:rgba(0,229,255,.4);letter-spacing:.18em;text-transform:uppercase;width:26px;text-align:right;}
+.sbar{width:75px;height:3px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.12);overflow:hidden;}
+.sf{height:100%;transition:width .8s ease;}
+.sf.c{background:var(--c);box-shadow:var(--glow);}
+.sf.o{background:var(--c2);box-shadow:var(--glow2);}
+.sf.g{background:var(--c3);box-shadow:var(--glow3);}
+.sf.r{background:var(--cr);box-shadow:0 0 8px rgba(255,23,68,.5);}
+.sval{font-size:.55rem;color:var(--c);min-width:30px;text-align:right;}
+
+/* ── WEATHER PANEL ── */
+.weather-panel{position:absolute;top:90px;right:20px;z-index:10;display:flex;flex-direction:column;gap:3px;align-items:flex-end;border-left:1px solid rgba(0,229,255,.15);padding-left:10px;}
+.w-temp{font-family:'Orbitron',monospace;font-size:1.3rem;font-weight:700;color:var(--c);text-shadow:var(--glow);}
+.w-cond{font-size:.5rem;color:rgba(0,229,255,.55);letter-spacing:.2em;text-transform:uppercase;}
+.w-row{display:flex;gap:8px;font-size:.5rem;color:rgba(0,229,255,.45);letter-spacing:.1em;}
+.w-val{color:var(--c);}
+.wind-arrow{font-size:.9rem;display:inline-block;transition:transform .5s ease;}
+.sunrise-row{font-size:.48rem;color:rgba(0,229,255,.35);letter-spacing:.1em;}
+
+/* ── HORIZON ── */
+.horizon-wrap{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:5;}
+.horizon{display:flex;align-items:center;gap:10px;transition:transform .1s ease;}
+.h-line{width:110px;height:1px;background:rgba(0,229,255,.3);}
+.h-center{width:8px;height:8px;border:1px solid var(--c);transform:rotate(45deg);box-shadow:var(--glow);background:rgba(0,229,255,.08);}
+.pitch-mark{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;}
+.pm-line{width:50px;height:1px;background:rgba(0,229,255,.18);}
+.pm-lbl{font-size:.42rem;color:rgba(0,229,255,.35);white-space:nowrap;}
+
+/* ── COORDS + STATUS ── */
+.panel-bl{position:absolute;bottom:24px;left:20px;z-index:10;display:flex;flex-direction:column;gap:2px;}
+.coord-row{display:flex;gap:6px;align-items:baseline;}
+.clbl{font-size:.46rem;color:rgba(0,229,255,.38);letter-spacing:.18em;width:22px;}
+.cval{font-size:.6rem;color:var(--c);letter-spacing:.04em;}
+.sys-status{font-size:.44rem;color:rgba(0,229,255,.28);letter-spacing:.28em;margin-top:4px;text-transform:uppercase;}
+.sdot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--c3);box-shadow:var(--glow3);animation:blink 2s ease-in-out infinite;margin-right:3px;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
+
+/* ── HEADING BIG ── */
+.panel-bc{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;align-items:center;gap:1px;}
+.hdg-big{font-family:'Orbitron',monospace;font-size:1rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.15em;}
+.hdg-deg{font-size:.48rem;color:rgba(0,229,255,.45);letter-spacing:.35em;}
+
+/* ── MINIMAP ── */
+.map-panel{position:absolute;bottom:20px;right:20px;z-index:10;display:flex;flex-direction:column;gap:3px;align-items:flex-end;}
+.map-lbl{font-size:.44rem;color:rgba(0,229,255,.32);letter-spacing:.28em;text-transform:uppercase;}
+#minimap{width:150px;height:150px;border:1px solid rgba(0,229,255,.25);overflow:hidden;position:relative;background:#000;}
+#minimap .leaflet-tile{filter:invert(1) hue-rotate(180deg) saturate(3) brightness(.7);}
+#minimap .leaflet-control-container{display:none;}
+.map-overlay{position:absolute;inset:0;pointer-events:none;z-index:1000;}
+.map-self-dot{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);}
+.msd-inner{width:8px;height:8px;background:var(--c);box-shadow:var(--glow);position:relative;z-index:2;}
+.msd-ring{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:20px;border:1px solid rgba(0,229,255,.4);border-radius:50%;animation:mring 2s ease-in-out infinite;}
+@keyframes mring{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:.5;}50%{transform:translate(-50%,-50%) scale(2);opacity:0;}}
+.map-hdg-line{position:absolute;top:50%;left:50%;width:40px;height:1px;background:linear-gradient(to right,var(--c),transparent);transform-origin:left center;box-shadow:var(--glow);transition:transform .3s ease;}
+.waypoint-dist{font-size:.48rem;color:var(--c2);letter-spacing:.15em;text-align:right;}
+
+/* ── WAYPOINTS SIDEBAR ── */
+.wp-panel{position:absolute;left:20px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:4px;max-height:200px;overflow:hidden;}
+.wp-item{display:flex;flex-direction:column;gap:1px;border-left:2px solid var(--c2);padding-left:6px;opacity:.8;}
+.wp-item:hover{opacity:1;}
+.wp-name{font-size:.52rem;color:var(--c2);letter-spacing:.1em;text-transform:uppercase;}
+.wp-info{font-size:.46rem;color:rgba(255,109,0,.5);letter-spacing:.08em;}
+
+/* ── OBJECT DETECTION ── */
+.detect-panel{position:absolute;top:50%;right:20px;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:4px;align-items:flex-end;max-height:300px;overflow:hidden;}
+.det-item{font-size:.5rem;padding:.15rem .4rem;border:1px solid;display:flex;gap:6px;align-items:center;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);animation:fi .2s ease both;}
+.det-item.person{border-color:var(--cr);color:var(--cr);}
+.det-item.object{border-color:var(--c);color:var(--c);}
+.det-conf{opacity:.6;}
+#camFeed{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;}
+#detCanvas{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;}
+
+/* ── THREAT ── */
+.threat-panel{position:absolute;left:20px;bottom:180px;z-index:10;display:flex;flex-direction:column;gap:2px;}
+.threat-lbl{font-size:.44rem;color:rgba(0,229,255,.32);letter-spacing:.28em;text-transform:uppercase;}
+.threat-bar{width:120px;height:6px;background:rgba(255,255,255,.06);border:1px solid rgba(0,229,255,.1);overflow:hidden;position:relative;}
+.threat-fill{height:100%;background:linear-gradient(to right,var(--c3),var(--c2),var(--cr));transition:width .5s ease;}
+.threat-val{font-size:.5rem;letter-spacing:.15em;}
+
+/* ── ALERTS ── */
+.alerts{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) translateY(-80px);z-index:20;display:flex;flex-direction:column;gap:4px;align-items:center;pointer-events:none;}
+.alert{font-size:.56rem;letter-spacing:.2em;padding:.2rem .6rem;border:1px solid;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);text-transform:uppercase;animation:alertIn .3s ease both;}
+.alert.info{border-color:var(--c);color:var(--c);}
+.alert.warn{border-color:var(--c2);color:var(--c2);}
+.alert.ok{border-color:var(--c3);color:var(--c3);}
+.alert.danger{border-color:var(--cr);color:var(--cr);}
+@keyframes alertIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
+
+/* ── XR BUTTON ── */
+#xrbtn{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:transparent;border:1px solid var(--c);color:var(--c);font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.3em;padding:.55rem 1.2rem;cursor:pointer;text-transform:uppercase;pointer-events:all;z-index:100;transition:all .2s;text-shadow:var(--glow);box-shadow:var(--glow);}
+#xrbtn:hover{background:var(--c);color:#000;}
+#xrbtn.hidden{display:none;}
+
+/* ── MAP WAYPOINT MARKER ── */
+.wp-marker{width:10px;height:10px;background:var(--c2);border-radius:50%;box-shadow:0 0 8px var(--c2);border:1px solid rgba(255,109,0,.5);}
+</style>
+</head>
+<body>
+
+<!-- BOOT -->
+<div id="boot">
+  <div class="b-logo">JARVIS</div>
+  <div class="b-sub">HEADS UP DISPLAY · v5.0.0</div>
+  <div class="b-bar-w"><div class="b-bar"></div></div>
+  <div class="b-lines">
+    <div class="bl">▸ INITIALIZING SENSOR ARRAY...</div>
+    <div class="bl">▸ GPS + COMPASS CALIBRATING</div>
+    <div class="bl">▸ LOADING CARTOGRAPHIC DATA</div>
+    <div class="bl">▸ WEATHER API CONNECTED</div>
+    <div class="bl">▸ OBJECT DETECTION ENGINE READY</div>
+    <div class="bl">▸ ALL SYSTEMS NOMINAL ✓</div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="scanlines"></div>
+  <div class="vignette"></div>
+  <div class="frame"></div>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+
+  <!-- COMPASS -->
+  <div class="compass-wrap">
+    <div class="compass-bar">
+      <div class="compass-track" id="compassTrack"></div>
+      <div class="compass-pin"></div>
+    </div>
+    <div class="hdg-text" id="hdgText">HDG 000°</div>
+  </div>
+
+  <!-- TOP LEFT -->
+  <div class="panel-tl">
+    <div class="clock" id="clock">00:00:00</div>
+    <div class="clock-sub" id="clockDate">-- --- ----</div>
+    <div class="speed-big" id="speedBig">0.0</div>
+    <div class="speed-unit">KM/H</div>
+    <div class="gforce" id="gforce">G: 1.00</div>
+  </div>
+
+  <!-- TOP RIGHT: STATS -->
+  <div class="panel-tr">
+    <div class="stat-row"><div class="slbl">BAT</div><div class="sbar"><div class="sf g" id="batF" style="width:85%"></div></div><div class="sval" id="batV">85%</div></div>
+    <div class="stat-row"><div class="slbl">SIG</div><div class="sbar"><div class="sf c" id="sigF" style="width:90%"></div></div><div class="sval" id="sigV">90%</div></div>
+    <div class="stat-row"><div class="slbl">CPU</div><div class="sbar"><div class="sf o" id="cpuF" style="width:32%"></div></div><div class="sval" id="cpuV">32%</div></div>
+    <div class="stat-row"><div class="slbl">MEM</div><div class="sbar"><div class="sf o" id="memF" style="width:58%"></div></div><div class="sval" id="memV">58%</div></div>
+  </div>
+
+  <!-- WEATHER -->
+  <div class="weather-panel" id="weatherPanel" style="display:none">
+    <div class="w-temp" id="wTemp">--°C</div>
+    <div class="w-cond" id="wCond">LOADING</div>
+    <div class="w-row">
+      <span>WIND</span>
+      <span class="wind-arrow" id="windArrow">↑</span>
+      <span class="w-val" id="windSpd">--</span><span>km/h</span>
+    </div>
+    <div class="w-row"><span>HUM</span><span class="w-val" id="wHum">--%</span></div>
+    <div class="sunrise-row" id="sunRow">↑ -- · ↓ --</div>
+  </div>
+
+  <!-- HORIZON -->
+  <div class="horizon-wrap" id="horizonWrap">
+    <div class="pitch-mark" style="top:-30px"><div class="pm-line"></div><div class="pm-lbl">+5°</div></div>
+    <div class="pitch-mark" style="top:-60px"><div class="pm-line"></div><div class="pm-lbl">+10°</div></div>
+    <div class="horizon" id="horizon">
+      <div class="h-line"></div><div class="h-center"></div><div class="h-line"></div>
+    </div>
+    <div class="pitch-mark" style="top:18px"><div class="pm-line"></div><div class="pm-lbl">-5°</div></div>
+    <div class="pitch-mark" style="top:48px"><div class="pm-line"></div><div class="pm-lbl">-10°</div></div>
+  </div>
+
+  <!-- BOTTOM LEFT: COORDS -->
+  <div class="panel-bl">
+    <div class="coord-row"><div class="clbl">LAT</div><div class="cval" id="lat">ACQUIRING</div></div>
+    <div class="coord-row"><div class="clbl">LON</div><div class="cval" id="lon">ACQUIRING</div></div>
+    <div class="sys-status"><span class="sdot"></span>ALL SYSTEMS NOMINAL</div>
+  </div>
+
+  <!-- BOTTOM CENTER -->
+  <div class="panel-bc">
+    <div class="hdg-big" id="hdgBig">N</div>
+    <div class="hdg-deg" id="hdgDeg">000°</div>
+  </div>
+
+  <!-- BOTTOM RIGHT: MAP -->
+  <div class="map-panel">
+    <div class="map-lbl">TACTICAL · LIVE MAP</div>
+    <div style="position:relative;width:150px;height:150px;">
+      <div id="minimap"></div>
+      <div class="map-overlay">
+        <div class="map-self-dot">
+          <div class="msd-ring"></div>
+          <div class="msd-inner"></div>
+        </div>
+        <div class="map-hdg-line" id="mapHdgLine"></div>
+      </div>
+    </div>
+    <div class="waypoint-dist" id="wpDist"></div>
+  </div>
+
+  <!-- WAYPOINTS -->
+  <div class="wp-panel" id="wpPanel"></div>
+
+  <!-- THREAT -->
+  <div class="threat-panel">
+    <div class="threat-lbl">THREAT LEVEL</div>
+    <div class="threat-bar"><div class="threat-fill" id="threatFill" style="width:5%"></div></div>
+    <div class="threat-val" id="threatVal" style="color:var(--c3)">MINIMAL</div>
+  </div>
+
+  <!-- OBJECT DETECTION -->
+  <div class="detect-panel" id="detectPanel"></div>
+  <canvas id="detCanvas"></canvas>
+  <video id="camFeed" autoplay playsinline muted></video>
+
+  <!-- ALERTS -->
+  <div class="alerts" id="alerts"></div>
+</div>
+
+<button id="xrbtn" onclick="enterXR()">◈ ENTER AR MODE</button>
+
+<script>
+var lat=null,lon=null,heading=0,speed=0;
+var map=null,mapMarker=null,selfCircle=null;
+var waypoints=[];
+var hasRealSensor=false;
+var demoHdg=0;
+var cocoModel=null;
+var detInterval=null;
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+setTimeout(function(){
+  document.getElementById('boot').classList.add('gone');
+  document.getElementById('hud').classList.add('on');
+  document.getElementById('xrbtn').style.opacity='1';
+  initAll();
+},3800);
+
+function initAll(){
+  startClock();
+  buildCompass();
+  startGeo();
+  startOrientation();
+  startBattery();
+  startSensors();
+  startFakeCPU();
+  initMap();
+  startDetection();
+  scheduleAlerts();
+}
+
+// ── CLOCK ─────────────────────────────────────────────────────────────────────
+var DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function startClock(){
+  function tick(){
+    var n=new Date();
+    document.getElementById('clock').textContent=pad(n.getHours())+':'+pad(n.getMinutes())+':'+pad(n.getSeconds());
+    document.getElementById('clockDate').textContent=DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear();
+  }
+  tick(); setInterval(tick,1000);
+}
+function pad(n){return String(n).padStart(2,'0');}
+
+// ── COMPASS ───────────────────────────────────────────────────────────────────
+var CARDS={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+var CARD_CLASS={180:'s',270:'w'};
+function buildCompass(){
+  var t=document.getElementById('compassTrack'),h='';
+  for(var i=-180;i<=540;i+=5){
+    var d=((i%360)+360)%360;
+    var c=CARDS[d];
+    if(c) h+='<span class="cd card '+(CARD_CLASS[d]||'')+'" data-d="'+i+'">'+c+'</span>';
+    else if(d%30===0) h+='<span class="cd" data-d="'+i+'">'+d+'</span>';
+    else h+='<span class="cd" data-d="'+i+'">·</span>';
+  }
+  t.innerHTML=h;
+}
+
+function updateCompass(hdg){
+  heading=hdg;
+  var track=document.getElementById('compassTrack');
+  var IW=28;
+  var offset=-(hdg+180)*IW/5+(320/2);
+  track.style.transform='translateX('+offset+'px)';
+  document.getElementById('hdgText').textContent='HDG '+String(Math.round(hdg)).padStart(3,'0')+'°';
+  document.getElementById('hdgBig').textContent=hdgToDir(hdg);
+  document.getElementById('hdgDeg').textContent=String(Math.round(hdg)).padStart(3,'0')+'°';
+  document.getElementById('mapHdgLine').style.transform='rotate('+hdg+'deg)';
+  if(map) map.setBearing ? map.setBearing(-hdg) : null;
+  updateWaypointDistances();
+  updateThreat();
+}
+
+function hdgToDir(h){
+  var d=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return d[Math.round(h/22.5)%16];
+}
+
+// ── ORIENTATION ───────────────────────────────────────────────────────────────
+function startOrientation(){
+  var req=typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function';
+  if(req){
+    document.getElementById('xrbtn').addEventListener('click',function once(){
+      DeviceOrientationEvent.requestPermission().then(function(p){
+        if(p==='granted') window.addEventListener('deviceorientation',onOrient);
+      });
+      document.getElementById('xrbtn').removeEventListener('click',once);
+    });
+  } else {
+    window.addEventListener('deviceorientation',onOrient);
+  }
+}
+
+function onOrient(e){
+  hasRealSensor=true;
+  var h=e.webkitCompassHeading||(e.alpha!=null?360-e.alpha:null);
+  if(h!=null) updateCompass(h);
+  if(e.beta!=null||e.gamma!=null){
+    var roll=e.gamma||0;
+    document.getElementById('horizon').style.transform='rotate('+(-roll)+'deg)';
+  }
+}
+
+// demo sweep
+setInterval(function(){
+  if(!hasRealSensor){
+    demoHdg=(demoHdg+0.3)%360;
+    updateCompass(demoHdg);
+  }
+},50);
+
+window.addEventListener('keydown',function(e){
+  if(e.key==='ArrowLeft'){hasRealSensor=true;heading=(heading-5+360)%360;updateCompass(heading);}
+  if(e.key==='ArrowRight'){hasRealSensor=true;heading=(heading+5)%360;updateCompass(heading);}
+});
+
+// ── GEO ───────────────────────────────────────────────────────────────────────
+function startGeo(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(function(pos){
+    lat=pos.coords.latitude;
+    lon=pos.coords.longitude;
+    speed=pos.coords.speed||0;
+    var kmh=(speed*3.6).toFixed(1);
+    document.getElementById('lat').textContent=lat.toFixed(6)+'°';
+    document.getElementById('lon').textContent=lon.toFixed(6)+'°';
+    document.getElementById('speedBig').textContent=kmh;
+    if(pos.coords.heading!=null&&!hasRealSensor) updateCompass(pos.coords.heading);
+    if(map) updateMapPos();
+    fetchWeather();
+  },function(){
+    // demo coords
+    lat=48.8566; lon=2.3522;
+    document.getElementById('lat').textContent='48.856600° [DEMO]';
+    document.getElementById('lon').textContent='2.352200° [DEMO]';
+    if(map) updateMapPos();
+    fetchWeather();
+  },{enableHighAccuracy:true,maximumAge:2000});
+}
+
+// ── MAP ───────────────────────────────────────────────────────────────────────
+function initMap(){
+  map=L.map('minimap',{
+    zoomControl:false,attributionControl:false,
+    dragging:false,scrollWheelZoom:false,doubleClickZoom:false,
+    keyboard:false,tap:false,zoom:16
+  }).setView([48.8566,2.3522],16);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+
+  // Click on main canvas to add waypoint
+  document.getElementById('minimap').addEventListener('click',function(e){
+    if(!map) return;
+    var rect=this.getBoundingClientRect();
+    var px=e.clientX-rect.left, py=e.clientY-rect.top;
+    var latlng=map.containerPointToLatLng([px,py]);
+    addWaypoint(latlng.lat,latlng.lng,'WP'+(waypoints.length+1));
+  });
+}
+
+function updateMapPos(){
+  if(!lat||!lon) return;
+  map.setView([lat,lon],16);
+  if(mapMarker) map.removeLayer(mapMarker);
+  // We use the overlay dot instead of a marker for the self position
+}
+
+function addWaypoint(wlat,wlon,name){
+  var icon=L.divIcon({className:'',html:'<div class="wp-marker"></div>',iconSize:[10,10]});
+  var marker=L.marker([wlat,wlon],{icon:icon}).addTo(map);
+  waypoints.push({lat:wlat,lon:wlon,name:name,marker:marker});
+  renderWaypoints();
+  addAlert('WAYPOINT SET: '+name,'info');
+}
+
+function dist(lat1,lon1,lat2,lon2){
+  var R=6371000;
+  var dLat=(lat2-lat1)*Math.PI/180;
+  var dLon=(lon2-lon1)*Math.PI/180;
+  var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function bearing(lat1,lon1,lat2,lon2){
+  var dLon=(lon2-lon1)*Math.PI/180;
+  var y=Math.sin(dLon)*Math.cos(lat2*Math.PI/180);
+  var x=Math.cos(lat1*Math.PI/180)*Math.sin(lat2*Math.PI/180)-Math.sin(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.cos(dLon);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+
+function renderWaypoints(){
+  var panel=document.getElementById('wpPanel');
+  panel.innerHTML=waypoints.slice(-4).map(function(wp){
+    var d=lat?Math.round(dist(lat,lon,wp.lat,wp.lon))+'m':'---';
+    var b=lat?Math.round(bearing(lat,lon,wp.lat,wp.lon))+'°':'---';
+    return '<div class="wp-item"><div class="wp-name">'+wp.name+'</div><div class="wp-info">'+d+' · '+b+'</div></div>';
+  }).join('');
+}
+
+function updateWaypointDistances(){
+  if(waypoints.length) renderWaypoints();
+  if(waypoints.length&&lat){
+    var nearest=waypoints.reduce(function(a,b){return dist(lat,lon,a.lat,a.lon)<dist(lat,lon,b.lat,b.lon)?a:b;});
+    var d=dist(lat,lon,nearest.lat,nearest.lon);
+    document.getElementById('wpDist').textContent=nearest.name+': '+(d<1000?Math.round(d)+'m':+(d/1000).toFixed(1)+'km');
+  }
+}
+
+// ── WEATHER ───────────────────────────────────────────────────────────────────
+var weatherFetched=false;
+function fetchWeather(){
+  if(weatherFetched||!lat||!lon) return;
+  weatherFetched=true;
+  var url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon
+    +'&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code'
+    +'&daily=sunrise,sunset&timezone=auto&forecast_days=1';
+  fetch(url).then(function(r){return r.json();}).then(function(d){
+    var c=d.current;
+    var daily=d.daily;
+    document.getElementById('wTemp').textContent=Math.round(c.temperature_2m)+'°C';
+    document.getElementById('wCond').textContent=wCode(c.weather_code);
+    document.getElementById('windSpd').textContent=Math.round(c.wind_speed_10m);
+    document.getElementById('wHum').textContent=Math.round(c.relative_humidity_2m)+'%';
+    var windDeg=c.wind_direction_10m||0;
+    document.getElementById('windArrow').style.transform='rotate('+windDeg+'deg)';
+    if(daily&&daily.sunrise&&daily.sunset){
+      var sr=daily.sunrise[0].split('T')[1];
+      var ss=daily.sunset[0].split('T')[1];
+      document.getElementById('sunRow').textContent='↑ '+sr+' · ↓ '+ss;
+    }
+    document.getElementById('weatherPanel').style.display='flex';
+    addAlert('WEATHER LOADED','ok');
+  }).catch(function(){});
+}
+
+function wCode(code){
+  if(code===0) return 'CLEAR SKY';
+  if(code<=2) return 'PARTLY CLOUDY';
+  if(code<=3) return 'OVERCAST';
+  if(code<=49) return 'FOG';
+  if(code<=59) return 'DRIZZLE';
+  if(code<=69) return 'RAIN';
+  if(code<=79) return 'SNOW';
+  if(code<=82) return 'RAIN SHOWERS';
+  if(code<=86) return 'SNOW SHOWERS';
+  if(code<=99) return 'THUNDERSTORM';
+  return 'UNKNOWN';
+}
+
+// ── BATTERY ───────────────────────────────────────────────────────────────────
+function startBattery(){
+  if(!navigator.getBattery) return;
+  navigator.getBattery().then(function(bat){
+    function upd(){
+      var p=Math.round(bat.level*100);
+      document.getElementById('batF').style.width=p+'%';
+      document.getElementById('batV').textContent=p+'%';
+      var cl=p>50?'sf g':p>20?'sf o':'sf r';
+      document.getElementById('batF').className=cl;
+      if(p<20) addAlert('LOW BATTERY '+p+'%','warn');
+    }
+    upd();
+    bat.addEventListener('levelchange',upd);
+  });
+}
+
+// ── ACCELEROMETER / G-FORCE ───────────────────────────────────────────────────
+function startSensors(){
+  if(!window.DeviceMotionEvent) return;
+  window.addEventListener('devicemotion',function(e){
+    if(!e.accelerationIncludingGravity) return;
+    var ax=e.accelerationIncludingGravity.x||0;
+    var ay=e.accelerationIncludingGravity.y||0;
+    var az=e.accelerationIncludingGravity.z||0;
+    var g=Math.sqrt(ax*ax+ay*ay+az*az)/9.81;
+    document.getElementById('gforce').textContent='G: '+g.toFixed(2);
+    // Update threat based on G
+    updateThreat(g);
+  });
+}
+
+// ── FAKE CPU/MEM ─────────────────────────────────────────────────────────────
+var fCPU=32,fMem=58;
+function startFakeCPU(){
+  setInterval(function(){
+    fCPU=Math.max(5,Math.min(95,fCPU+(Math.random()-.5)*10));
+    fMem=Math.max(30,Math.min(90,fMem+(Math.random()-.5)*3));
+    document.getElementById('cpuF').style.width=fCPU+'%';
+    document.getElementById('cpuV').textContent=Math.round(fCPU)+'%';
+    document.getElementById('memF').style.width=fMem+'%';
+    document.getElementById('memV').textContent=Math.round(fMem)+'%';
+  },2500);
+}
+
+// ── THREAT ────────────────────────────────────────────────────────────────────
+var personCount=0;
+function updateThreat(gForce){
+  var t=5;
+  t+=personCount*15;
+  if(gForce&&gForce>1.5) t+=Math.min((gForce-1)*20,30);
+  if(speed>20) t+=10;
+  t=Math.min(t,100);
+  document.getElementById('threatFill').style.width=t+'%';
+  var el=document.getElementById('threatVal');
+  if(t<20){el.textContent='MINIMAL';el.style.color='var(--c3)';}
+  else if(t<50){el.textContent='ELEVATED';el.style.color='var(--c)';}
+  else if(t<75){el.textContent='HIGH';el.style.color='var(--c2)';}
+  else{el.textContent='CRITICAL';el.style.color='var(--cr)';}
+}
+
+// ── OBJECT DETECTION ─────────────────────────────────────────────────────────
+function startDetection(){
+  var video=document.getElementById('camFeed');
+  var canvas=document.getElementById('detCanvas');
+  var panel=document.getElementById('detectPanel');
+
+  // Load model
+  if(typeof cocoSsd==='undefined') return;
+  cocoSsd.load().then(function(model){
+    cocoModel=model;
+    addAlert('OBJECT DETECTION READY','ok');
+    // Start camera
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false})
+    .then(function(stream){
+      video.srcObject=stream;
+      video.onloadedmetadata=function(){
+        canvas.width=window.innerWidth;
+        canvas.height=window.innerHeight;
+        canvas.style.opacity='0'; // invisible detection
+        runDetection();
+      };
+    }).catch(function(){
+      addAlert('CAMERA ACCESS DENIED','warn');
+      runFakeDetection();
+    });
+  }).catch(function(){ runFakeDetection(); });
+}
+
+function runDetection(){
+  if(!cocoModel) return;
+  var video=document.getElementById('camFeed');
+  var panel=document.getElementById('detectPanel');
+
+  function detect(){
+    cocoModel.detect(video).then(function(preds){
+      personCount=preds.filter(function(p){return p.class==='person';}).length;
+      var html='';
+      var shown=preds.slice(0,6);
+      shown.forEach(function(p){
+        var isPerson=p.class==='person';
+        var conf=Math.round(p.score*100);
+        html+='<div class="det-item '+(isPerson?'person':'object')+'">'
+          +(isPerson?'👤':'◈')+' '+p.class.toUpperCase()
+          +' <span class="det-conf">'+conf+'%</span>'
+          +'</div>';
+      });
+      panel.innerHTML=html;
+      updateThreat();
+    }).catch(function(){});
+  }
+
+  detInterval=setInterval(detect,1200);
+}
+
+var fakeDetObjs=['CHAIR','LAPTOP','BOTTLE','PHONE','BACKPACK','MONITOR'];
+var fakeDetIdx=0;
+function runFakeDetection(){
+  setInterval(function(){
+    var panel=document.getElementById('detectPanel');
+    var items=[];
+    var n=Math.floor(Math.random()*3)+1;
+    for(var i=0;i<n;i++){
+      var obj=fakeDetObjs[(fakeDetIdx+i)%fakeDetObjs.length];
+      var conf=Math.round(70+Math.random()*25);
+      items.push('<div class="det-item object">◈ '+obj+' <span class="det-conf">'+conf+'%</span></div>');
+    }
+    fakeDetIdx=(fakeDetIdx+1)%fakeDetObjs.length;
+    panel.innerHTML=items.join('');
+  },3000);
+}
+
+// ── ALERTS ────────────────────────────────────────────────────────────────────
+function addAlert(msg,type){
+  var el=document.createElement('div');
+  el.className='alert '+(type||'info');
+  el.textContent=msg;
+  document.getElementById('alerts').appendChild(el);
+  setTimeout(function(){
+    el.style.transition='opacity .4s';
+    el.style.opacity='0';
+    setTimeout(function(){el.remove();},400);
+  },3500);
+}
+
+function scheduleAlerts(){
+  setTimeout(function(){addAlert('HUD ONLINE','ok');},200);
+  setTimeout(function(){addAlert('SENSORS ACTIVE','ok');},1000);
+  setTimeout(function(){addAlert('GPS ACQUIRING...','info');},1800);
+  setTimeout(function(){addAlert('TAP MAP TO DROP WAYPOINT','info');},6000);
+}
+
+// ── WEBXR ─────────────────────────────────────────────────────────────────────
+var xrSession=null;
+async function enterXR(){
+  var btn=document.getElementById('xrbtn');
+  if(xrSession){xrSession.end();return;}
+  if(!navigator.xr){addAlert('WebXR NOT AVAILABLE','warn');return;}
+  try{
+    var arOk=await navigator.xr.isSessionSupported('immersive-ar');
+    var mode=arOk?'immersive-ar':'immersive-vr';
+    var opts=arOk?{
+      requiredFeatures:['local'],
+      optionalFeatures:['dom-overlay'],
+      domOverlay:{root:document.getElementById('hud')}
+    }:{requiredFeatures:['local']};
+    xrSession=await navigator.xr.requestSession(mode,opts);
+    btn.textContent='◈ EXIT AR';
+    addAlert('AR MODE ACTIVE','ok');
+    document.body.style.background='transparent';
+    xrSession.addEventListener('end',function(){
+      xrSession=null;
+      btn.textContent='◈ ENTER AR MODE';
+      document.body.style.background='#000';
+      addAlert('AR ENDED','info');
+    });
+    var gl=document.createElement('canvas').getContext('webgl',{xrCompatible:true});
+    var layer=new XRWebGLLayer(xrSession,gl);
+    xrSession.updateRenderState({baseLayer:layer});
+    var ref=await xrSession.requestReferenceSpace('local');
+    function frame(t,f){
+      if(!xrSession)return;
+      xrSession.requestAnimationFrame(frame);
+      var pose=f.getViewerPose(ref);
+      if(pose){
+        var q=pose.transform.orientation;
+        var yaw=Math.atan2(2*(q.w*q.y+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
+        hasRealSensor=true;
+        updateCompass(((yaw*180/Math.PI)+360)%360);
+      }
+    }
+    xrSession.requestAnimationFrame(frame);
+  } catch(e){
+    addAlert('XR ERROR: '+e.message,'warn');
+  }
+}
+</script>
+</body>
+</html>
