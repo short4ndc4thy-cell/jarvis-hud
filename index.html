@@ -109,6 +109,36 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 #permBtn{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.85);border:1px solid var(--c);color:var(--c);font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.22em;padding:.7rem 1.5rem;cursor:pointer;text-transform:uppercase;z-index:9999;text-shadow:var(--glow);}
 #hud2d{display:none;}
 #hudMirror{position:fixed;right:10px;bottom:10px;width:180px;height:90px;border:1px solid rgba(0,229,255,.18);display:none;z-index:10000;}
+
+/* ── NIGHT VISION AUTO PANEL ── */
+#nvPanel{
+  position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;z-index:100;
+}
+#nvBtn{
+  background:transparent;border:1px solid var(--c);color:var(--c);
+  font-family:'Orbitron',monospace;font-size:.5rem;letter-spacing:.2em;
+  padding:.3rem .8rem;cursor:pointer;text-transform:uppercase;
+  text-shadow:var(--glow);transition:all .2s;opacity:.65;
+}
+#nvBtn:hover{opacity:1;}
+#nvBtn.active{opacity:1;background:rgba(255,255,255,.06);border-color:var(--c);
+  box-shadow:0 0 12px var(--c),inset 0 0 8px rgba(255,255,255,.04);}
+#nvSub{display:none;flex-direction:column;align-items:center;gap:5px;}
+#nvSub.visible{display:flex;}
+.nv-row{display:flex;align-items:center;gap:7px;}
+.nv-lbl{font-family:'Orbitron',monospace;font-size:.42rem;font-weight:900;
+  color:var(--c);opacity:.6;letter-spacing:.18em;width:32px;text-align:right;}
+.nvDot{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.18);
+  cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s;}
+.nvDot:hover,.nvDot.active{transform:scale(1.35);border-color:rgba(255,255,255,.8);
+  box-shadow:0 0 6px currentColor;}
+.nvDot.nv-red{background:#ff1744;color:#ff1744;}
+.nvDot.nv-amber{background:#ffb300;color:#ffb300;}
+.nvDot.nv-cyan{background:#00e5ff;color:#00e5ff;}
+.nvDot.nv-green{background:#76ff03;color:#76ff03;}
+#nvStatus{font-family:'Orbitron',monospace;font-size:.4rem;letter-spacing:.16em;
+  color:var(--c);opacity:.45;margin-top:1px;}
 </style>
 </head>
 <body class="theme-cyan">
@@ -156,6 +186,23 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
 <div class="alerts" id="alerts"></div>
 
+<div id="nvPanel">
+  <div id="nvSub">
+    <div class="nv-row">
+      <span class="nv-lbl">DARK</span>
+      <div class="nvDot nv-red   active" id="nvd-red"   title="Red"   onclick="setNvDark('red',this)"></div>
+      <div class="nvDot nv-amber"        id="nvd-amber" title="Amber" onclick="setNvDark('amber',this)"></div>
+    </div>
+    <div class="nv-row">
+      <span class="nv-lbl">LIGHT</span>
+      <div class="nvDot nv-cyan  active" id="nvl-cyan"  title="Cyan"  onclick="setNvLight('cyan',this)"></div>
+      <div class="nvDot nv-green"        id="nvl-green" title="Green" onclick="setNvLight('green',this)"></div>
+    </div>
+    <div id="nvStatus">● STANDBY</div>
+  </div>
+  <button id="nvBtn" onclick="toggleNV()">◈ AUTO NV</button>
+</div>
+
 <div id="themePicker">
   <div class="tpBtn tc active" onclick="setTheme('cyan',this)"  title="Cyan"></div>
   <div class="tpBtn tg"        onclick="setTheme('green',this)" title="Green"></div>
@@ -178,6 +225,15 @@ var THEMES={
 };
 var currentTheme='cyan';
 function setTheme(name,btn){
+  // If user manually clicks a theme while NV is running, turn NV off
+  if(btn && nvActive){
+    nvActive=false; nvCurrentMode='';
+    if(nvStream){nvStream.getTracks().forEach(function(t){t.stop();}); nvStream=null;}
+    nvVideo=null; nvBrightSamples=[];
+    document.getElementById('nvBtn').classList.remove('active');
+    document.getElementById('nvSub').classList.remove('visible');
+    document.getElementById('nvStatus').textContent='● STANDBY';
+  }
   currentTheme=name;
   document.body.className='theme-'+name;
   document.querySelectorAll('.tpBtn').forEach(function(b){b.classList.remove('active');});
@@ -203,11 +259,21 @@ var gyroActive=false; // tracks if a real sensor is feeding heading
 var poiData=[];
 var cpuSamples=[];
 
+/* ── NV AUTO STATE ── */
+var nvActive=false,nvStream=null,nvVideo=null,nvCanvas=null,nvCtx=null;
+var nvDarkTheme='red',nvLightTheme='cyan';
+var nvBrightSamples=[],NV_SAMPLE_SIZE=8;
+var nvCurrentMode=''; // 'dark' | 'light'
+// Hysteresis thresholds (0–255 perceived luminance)
+var NV_DARK_THRESH=55,NV_LIGHT_THRESH=90;
+
 /* ── BOOT ── */
 window.addEventListener('DOMContentLoaded',function(){
   startClock(); startBattery(); startGPS(); startSysStats(); startNetwork();
   startOrientation();
   startBearingLoop();
+  nvCanvas=document.createElement('canvas'); nvCanvas.width=32; nvCanvas.height=32;
+  nvCtx=nvCanvas.getContext('2d',{willReadFrequently:true});
   if(isIOS) document.getElementById('permBtn').style.display='block';
   addAlert('HUD ONLINE','ok');
 });
@@ -740,6 +806,102 @@ function drawHud2D(){
     });
     ctx.restore();
   }
+}
+
+/* ── NIGHT VISION AUTO ── */
+function setNvDark(name,btn){
+  nvDarkTheme=name;
+  document.querySelectorAll('[id^="nvd-"]').forEach(function(b){b.classList.remove('active');});
+  if(btn) btn.classList.add('active');
+  if(nvActive&&nvCurrentMode==='dark') setTheme(nvDarkTheme);
+}
+function setNvLight(name,btn){
+  nvLightTheme=name;
+  document.querySelectorAll('[id^="nvl-"]').forEach(function(b){b.classList.remove('active');});
+  if(btn) btn.classList.add('active');
+  if(nvActive&&nvCurrentMode==='light') setTheme(nvLightTheme);
+}
+
+async function toggleNV(){
+  var btn=document.getElementById('nvBtn');
+  var sub=document.getElementById('nvSub');
+  if(nvActive){
+    // Turn off
+    nvActive=false;
+    nvCurrentMode='';
+    if(nvStream){nvStream.getTracks().forEach(function(t){t.stop();}); nvStream=null;}
+    nvVideo=null; nvBrightSamples=[];
+    btn.classList.remove('active');
+    sub.classList.remove('visible');
+    document.getElementById('nvStatus').textContent='● STANDBY';
+    addAlert('AUTO NV OFF','info');
+    return;
+  }
+  // Turn on — request rear camera
+  try{
+    nvStream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},width:{ideal:64},height:{ideal:64}}
+    });
+    nvVideo=document.createElement('video');
+    nvVideo.srcObject=nvStream;
+    nvVideo.setAttribute('playsinline','');
+    nvVideo.setAttribute('muted','');
+    nvVideo.muted=true;
+    nvVideo.play();
+    nvActive=true;
+    btn.classList.add('active');
+    sub.classList.add('visible');
+    document.getElementById('nvStatus').textContent='● SENSING';
+    addAlert('AUTO NV ON','ok');
+    // Start the sample loop
+    nvSampleLoop();
+  }catch(e){
+    addAlert('CAM DENIED','warn');
+  }
+}
+
+function nvSampleLoop(){
+  if(!nvActive) return;
+  setTimeout(nvSampleLoop, 800); // sample ~1.2x/sec
+
+  if(!nvVideo||nvVideo.readyState<2) return;
+  try{
+    nvCtx.drawImage(nvVideo,0,0,32,32);
+    var data=nvCtx.getImageData(0,0,32,32).data;
+    var sum=0,count=0;
+    // sample every 4th pixel for speed, use perceived luminance weights
+    for(var i=0;i<data.length;i+=16){
+      sum+=data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114;
+      count++;
+    }
+    var lum=count>0?sum/count:128;
+
+    // Rolling average for stability
+    nvBrightSamples.push(lum);
+    if(nvBrightSamples.length>NV_SAMPLE_SIZE) nvBrightSamples.shift();
+    var avg=nvBrightSamples.reduce(function(a,b){return a+b;},0)/nvBrightSamples.length;
+
+    var pct=Math.round(avg/255*100);
+    var statusEl=document.getElementById('nvStatus');
+
+    // Apply with hysteresis to prevent flicker
+    if(avg<NV_DARK_THRESH && nvCurrentMode!=='dark'){
+      nvCurrentMode='dark';
+      setTheme(nvDarkTheme);
+      statusEl.textContent='● NIGHT  '+pct+'%';
+      statusEl.style.color=THEMES[nvDarkTheme].c;
+      addAlert('NV · NIGHT MODE','warn');
+    } else if(avg>NV_LIGHT_THRESH && nvCurrentMode!=='light'){
+      nvCurrentMode='light';
+      setTheme(nvLightTheme);
+      statusEl.textContent='● DAY  '+pct+'%';
+      statusEl.style.color=THEMES[nvLightTheme].c;
+      addAlert('NV · DAY MODE','info');
+    } else {
+      // Update brightness readout without switching
+      statusEl.textContent=(nvCurrentMode==='dark'?'● NIGHT ':nvCurrentMode==='light'?'● DAY ':'● SENSING ')+pct+'%';
+    }
+  }catch(e){}
 }
 
 /* ── WebGL ── */
