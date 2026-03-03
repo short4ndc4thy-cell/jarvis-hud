@@ -25,9 +25,9 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 /* ── TOP LEFT: time + location ── */
 .tl{position:fixed;top:18px;left:18px;display:flex;flex-direction:column;gap:4px;z-index:10;}
 .clock{font-family:'Orbitron',monospace;font-size:1.6rem;font-weight:900;color:var(--c);text-shadow:var(--glow);letter-spacing:.08em;line-height:1;}
-.date{font-size:.66rem;color:rgba(0,229,255,.5);letter-spacing:.15em;}
+.date{font-size:.7rem;font-weight:700;color:rgba(0,229,255,.75);letter-spacing:.15em;}
 .area{font-size:.72rem;color:var(--c);letter-spacing:.12em;margin-top:2px;text-shadow:var(--glow);transition:color .4s;}
-.street{font-size:.58rem;color:rgba(0,229,255,.6);letter-spacing:.08em;margin-top:1px;}
+.street{font-size:.62rem;font-weight:700;color:rgba(0,229,255,.8);letter-spacing:.08em;margin-top:1px;}
 .area.updating{animation:pulse-text .6s ease;}
 @keyframes pulse-text{
   0%{opacity:1;text-shadow:0 0 20px rgba(0,229,255,1),0 0 40px rgba(0,229,255,.6);}
@@ -35,24 +35,41 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
   100%{opacity:1;text-shadow:var(--glow);}
 }
 
+/* ── BACKDROP PANELS ── */
+.panel{background:rgba(0,0,0,.52);border:1px solid rgba(0,229,255,.13);backdrop-filter:blur(4px);padding:7px 10px;}
+
 /* ── TOP RIGHT: battery + wifi ── */
 .tr{position:fixed;top:18px;right:18px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;z-index:10;}
 .stat{display:flex;align-items:center;gap:7px;}
-.slbl{font-size:.46rem;color:rgba(0,229,255,.4);letter-spacing:.15em;}
-.sbar{width:64px;height:3px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.15);overflow:hidden;position:relative;}
+.slbl{font-size:.54rem;font-weight:700;color:rgba(0,229,255,.7);letter-spacing:.15em;}
+.sbar{width:64px;height:4px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.2);overflow:hidden;position:relative;}
 .sf{height:100%;transition:width 1s ease;}
 .sf.g{background:var(--c3);box-shadow:0 0 6px rgba(118,255,3,.5);}
 .sf.c{background:var(--c);box-shadow:0 0 6px rgba(0,229,255,.4);}
 .sf.o{background:var(--c2);}
 .sf.r{background:var(--cr);}
-.sval{font-size:.5rem;color:rgba(0,229,255,.8);min-width:28px;text-align:right;transition:color .4s;}
+.sval{font-size:.6rem;font-weight:700;color:rgba(0,229,255,.95);min-width:28px;text-align:right;transition:color .4s;}
+
+/* ── BEARING BAR ── */
+#bearingWrap{width:180px;overflow:hidden;position:relative;height:28px;}
+#bearingTrack{display:flex;align-items:center;height:100%;position:absolute;white-space:nowrap;transition:transform .15s linear;}
+.btick{display:inline-flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0;}
+.btick-line{width:1px;background:rgba(0,229,255,.35);height:8px;}
+.btick-line.major{background:rgba(0,229,255,.7);height:13px;}
+.btick-lbl{font-size:.42rem;font-weight:700;color:rgba(0,229,255,.55);letter-spacing:.05em;margin-top:2px;}
+.btick-lbl.card{color:var(--c);font-size:.48rem;}
+.btick-lbl.north{color:#ff1744;}
+/* centre reticle */
+#bearingWrap::before{content:'';position:absolute;left:50%;top:0;transform:translateX(-50%);width:1px;height:100%;background:rgba(0,229,255,.5);z-index:2;}
+#bearingWrap::after{content:'▼';position:absolute;left:50%;top:-1px;transform:translateX(-50%);font-size:.5rem;color:var(--c);z-index:2;line-height:1;}
+#hdgVal{font-family:'Orbitron',monospace;font-size:.75rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.1em;text-align:center;margin-top:2px;}
 
 /* ── BOTTOM LEFT: GPS ── */
 .bl{position:fixed;bottom:18px;left:18px;display:flex;flex-direction:column;gap:3px;z-index:10;}
 .loc-row{display:flex;gap:6px;align-items:baseline;}
-.lloc{font-size:.5rem;color:rgba(0,229,255,.35);letter-spacing:.14em;width:20px;}
-.lval{font-size:.66rem;color:var(--c);letter-spacing:.03em;transition:color .3s;}
-.gps-status{font-size:.54rem;letter-spacing:.14em;margin-top:2px;transition:color .4s;}
+.lloc{font-size:.56rem;font-weight:700;color:rgba(0,229,255,.55);letter-spacing:.14em;width:20px;}
+.lval{font-size:.7rem;font-weight:700;color:var(--c);letter-spacing:.03em;transition:color .3s;}
+.gps-status{font-size:.58rem;font-weight:700;letter-spacing:.14em;margin-top:2px;transition:color .4s;}
 .gps-status.acquiring{color:var(--c2);animation:blink-acq 1.2s ease-in-out infinite;}
 .gps-status.locked{color:var(--c3);}
 .gps-status.denied{color:var(--cr);}
@@ -61,11 +78,11 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 /* ── BOTTOM RIGHT: weather ── */
 .br{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:4px;align-items:flex-end;z-index:10;}
 .temp{font-family:'Orbitron',monospace;font-size:1.4rem;font-weight:700;color:var(--c);text-shadow:var(--glow);transition:color .4s;}
-.cond{font-size:.6rem;color:rgba(0,229,255,.5);letter-spacing:.16em;}
-.wrow{font-size:.55rem;color:rgba(0,229,255,.4);display:flex;gap:6px;align-items:center;}
-.wval{color:rgba(0,229,255,.85);transition:color .3s;}
-.sunrow{font-size:.5rem;color:rgba(0,229,255,.3);}
-.divider{width:100%;height:1px;background:rgba(0,229,255,.12);margin:2px 0;}
+.cond{font-size:.64rem;font-weight:700;color:rgba(0,229,255,.8);letter-spacing:.16em;}
+.wrow{font-size:.6rem;font-weight:700;color:rgba(0,229,255,.65);display:flex;gap:6px;align-items:center;}
+.wval{color:rgba(0,229,255,.95);transition:color .3s;}
+.sunrow{font-size:.54rem;font-weight:700;color:rgba(0,229,255,.55);}
+.divider{width:100%;height:1px;background:rgba(0,229,255,.15);margin:2px 0;}
 
 /* value-change pulse — applied via JS */
 .flash{animation:flash-val .7s ease;}
@@ -75,11 +92,9 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
   100%{opacity:1;filter:brightness(1);}
 }
 
-/* AQI / pollen colour coding handled inline */
-
 /* ── ALERTS ── */
 .alerts{position:fixed;top:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:3px;align-items:center;z-index:20;pointer-events:none;}
-.alert{font-size:.48rem;letter-spacing:.16em;padding:.15rem .55rem;border:1px solid;text-transform:uppercase;animation:alert-in .25s ease both;}
+.alert{font-size:.52rem;font-weight:700;letter-spacing:.16em;padding:.15rem .55rem;border:1px solid;text-transform:uppercase;animation:alert-in .25s ease both;}
 .alert.ok  {border-color:rgba(118,255,3,.4);color:var(--c3);}
 .alert.warn{border-color:rgba(255,109,0,.45);color:var(--c2);}
 .alert.info{border-color:rgba(0,229,255,.35);color:var(--c);}
@@ -116,7 +131,7 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 <div class="corner bl"></div><div class="corner br"></div>
 
 <!-- TOP LEFT -->
-<div class="tl">
+<div class="tl panel">
   <div class="clock" id="clock">00:00:00</div>
   <div class="date"  id="date">-- --- ----</div>
   <div class="area"   id="area">LOCATING...</div>
@@ -124,7 +139,7 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 </div>
 
 <!-- TOP RIGHT -->
-<div class="tr">
+<div class="tr panel">
   <div class="stat">
     <div class="slbl">BAT</div>
     <div class="sbar"><div class="sf g" id="batF" style="width:85%"></div></div>
@@ -138,8 +153,11 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 </div>
 
 <!-- BOTTOM LEFT -->
-<div class="bl">
-  <canvas id="compass" width="80" height="80"></canvas>
+<div class="bl panel">
+  <!-- BEARING BAR replaces compass -->
+  <div id="bearingWrap"><div id="bearingTrack"></div></div>
+  <div id="hdgVal">HDG ---°</div>
+  <div style="height:5px"></div>
   <div class="loc-row"><div class="lloc">LAT</div><div class="lval" id="latV">--</div></div>
   <div class="loc-row"><div class="lloc">LON</div><div class="lval" id="lonV">--</div></div>
   <div class="loc-row"><div class="lloc">SPD</div><div class="lval" id="speedVal">0.0</div><div class="lloc" style="margin-left:2px">km/h</div></div>
@@ -152,7 +170,7 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
 <!-- MINIMAP for waypoints -->
 <div id="mapWrap" style="position:fixed;left:18px;top:50%;transform:translateY(-50%) translateY(-120px);z-index:10;display:flex;flex-direction:column;gap:3px;">
-  <div style="font-size:.38rem;color:rgba(0,229,255,.28);letter-spacing:.2em;">TAP TO SET WAYPOINT</div>
+  <div style="font-size:.42rem;font-weight:700;color:rgba(0,229,255,.45);letter-spacing:.2em;">TAP TO SET WAYPOINT</div>
   <div style="position:relative;width:110px;height:110px;border:1px solid rgba(0,229,255,.25);overflow:hidden;">
     <div id="minimap" style="width:110px;height:110px;"></div>
     <div style="position:absolute;inset:0;pointer-events:none;z-index:1000;">
@@ -162,11 +180,11 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
       <div id="mapHdgLine" style="position:absolute;top:50%;left:50%;width:28px;height:1px;background:linear-gradient(to right,var(--c),transparent);transform-origin:left center;transition:transform .3s;"></div>
     </div>
   </div>
-  <div id="wpDist" style="font-size:.4rem;color:var(--c2);letter-spacing:.1em;text-align:right;"></div>
+  <div id="wpDist" style="font-size:.44rem;font-weight:700;color:var(--c2);letter-spacing:.1em;text-align:right;"></div>
 </div>
 
 <!-- BOTTOM RIGHT -->
-<div class="br">
+<div class="br panel">
   <div class="temp" id="wTemp">--°</div>
   <div class="cond" id="wCond">--</div>
   <div class="wrow"><span>WIND</span><span class="wval" id="wWind">--</span><span>km/h</span></div>
@@ -174,7 +192,7 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
   <div class="sunrow" id="wSun">↑ -- · ↓ --</div>
   <div class="divider" id="envDivider" style="display:none"></div>
   <div class="wrow" id="aqiRow"    style="display:none"><span>AQI</span><span class="wval" id="wAqi">--</span><span id="wAqiLbl"></span></div>
-  <div class="wrow" id="pollenRow" style="display:none"><span>POLLEN</span><span class="wval" id="wPollen">--</span><span id="wPollenLbl" style="color:rgba(0,229,255,.4)"></span></div>
+  <div class="wrow" id="pollenRow" style="display:none"><span>POLLEN</span><span class="wval" id="wPollen">--</span><span id="wPollenLbl" style="color:rgba(0,229,255,.55)"></span></div>
 </div>
 
 <div class="alerts" id="alerts"></div>
@@ -193,6 +211,13 @@ var alertsState=[];
 var isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
 var DAYS   =['SUN','MON','TUE','WED','THU','FRI','SAT'];
 var MONTHS =['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+/* GPS retry config */
+var GPS_TIMEOUT = 60000;      // 60 s before a single attempt times out
+var GPS_RETRY_DELAY = 5000;   // wait 5 s between retries
+var gpsRetryTimer = null;
+var gpsAttempts = 0;
+var GPS_MAX_ATTEMPTS = 10;    // stop trying after 10 consecutive errors
 
 /* ══════════════════════════════════════
    BOOT
@@ -225,7 +250,7 @@ function p3(n){return String(Math.round(n)).padStart(3,'0');}
 function flashEl(el){
   if(!el) return;
   el.classList.remove('flash');
-  void el.offsetWidth; // reflow to restart
+  void el.offsetWidth;
   el.classList.add('flash');
 }
 
@@ -249,7 +274,7 @@ function startBattery(){
 }
 
 /* ══════════════════════════════════════
-   GPS
+   GPS — with timeout retry
 ══════════════════════════════════════ */
 function startGPS(){
   if(!navigator.geolocation){setGPS('UNAVAILABLE','denied');return;}
@@ -259,31 +284,74 @@ function startGPS(){
       else doWatch();
       s.onchange=function(){
         if(s.state==='granted'&&!geoWatchId) doWatch();
-        if(s.state==='denied') setGPS('DENIED','denied');
+        if(s.state==='denied'){clearGPSRetry();setGPS('DENIED','denied');}
       };
     }).catch(doWatch);
   } else doWatch();
 }
-function doWatch(){
-  if(geoWatchId) return;
-  setGPS('ACQUIRING','acquiring');
-  geoWatchId=navigator.geolocation.watchPosition(function(pos){
-    var newLat=pos.coords.latitude, newLon=pos.coords.longitude;
-    var moved = lat==null || Math.abs(newLat-lat)>0.001 || Math.abs(newLon-lon)>0.001;
-    lat=newLat; lon=newLon;
-    currentSpeed=(pos.coords.speed||0)*3.6; // m/s → km/h
-    document.getElementById('latV').textContent=lat.toFixed(5)+'°';
-    document.getElementById('lonV').textContent=lon.toFixed(5)+'°';
-    setVal('speedVal', currentSpeed.toFixed(1));
-    setVal('gVal', currentG.toFixed(2));
-    setGPS('LOCKED','locked');
-    fetchWeather();
-    if(moved) reverseGeocode();
-  },function(e){
-    var m={1:'DENIED',2:'UNAVAILABLE',3:'TIMEOUT'};
-    setGPS(m[e.code]||'ERROR',e.code===1?'denied':'acquiring');
-  },{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+
+function clearGPSRetry(){
+  clearTimeout(gpsRetryTimer);
+  if(geoWatchId!=null){
+    try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}
+    geoWatchId=null;
+  }
 }
+
+function doWatch(){
+  if(geoWatchId!=null) return;   // already watching
+  gpsAttempts++;
+  setGPS('ACQUIRING','acquiring');
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    function(pos){
+      // success — reset retry counter
+      gpsAttempts = 0;
+      clearTimeout(gpsRetryTimer);
+
+      var newLat=pos.coords.latitude, newLon=pos.coords.longitude;
+      var moved = lat==null || Math.abs(newLat-lat)>0.001 || Math.abs(newLon-lon)>0.001;
+      lat=newLat; lon=newLon;
+      currentSpeed=(pos.coords.speed||0)*3.6;
+      document.getElementById('latV').textContent=lat.toFixed(5)+'°';
+      document.getElementById('lonV').textContent=lon.toFixed(5)+'°';
+      setVal('speedVal', currentSpeed.toFixed(1));
+      setVal('gVal', currentG.toFixed(2));
+      setGPS('LOCKED','locked');
+      fetchWeather();
+      if(moved) reverseGeocode();
+    },
+    function(e){
+      // error handler — clear watch and schedule retry
+      try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}
+      geoWatchId = null;
+
+      var codes={1:'DENIED',2:'UNAVAILABLE',3:'TIMEOUT'};
+      var msg = codes[e.code]||'ERROR';
+
+      if(e.code===1){
+        // permission denied — no point retrying
+        setGPS('DENIED','denied');
+        return;
+      }
+
+      if(gpsAttempts >= GPS_MAX_ATTEMPTS){
+        setGPS('FAILED','denied');
+        addAlert('GPS FAILED AFTER '+GPS_MAX_ATTEMPTS+' TRIES','warn');
+        return;
+      }
+
+      setGPS(msg+' RETRY '+(gpsAttempts)+'/'+GPS_MAX_ATTEMPTS,'acquiring');
+      gpsRetryTimer = setTimeout(doWatch, GPS_RETRY_DELAY);
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: GPS_TIMEOUT   // ← was 20 000, now 60 000 ms
+    }
+  );
+}
+
 function setGPS(msg,cls){
   var el=document.getElementById('gpsS');
   el.textContent='● GPS '+msg;
@@ -295,14 +363,12 @@ function setGPS(msg,cls){
 ══════════════════════════════════════ */
 var geocodeTimer=null;
 function reverseGeocode(){
-  // debounce — only fire if position hasn't changed for 3s
   clearTimeout(geocodeTimer);
   geocodeTimer=setTimeout(function(){
     fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json&zoom=14',
       {headers:{'Accept-Language':'en'}})
     .then(function(r){return r.json();}).then(function(d){
       var addr=d.address||{};
-      // pick best available label: neighbourhood > suburb > city_district > town > city > county
       var area = addr.neighbourhood||addr.suburb||addr.city_district||addr.village||addr.town||addr.city||addr.county||addr.state||'';
       var city = addr.city||addr.town||addr.village||'';
       var label = area && city && area!==city ? area+', '+city : area||city||d.display_name.split(',')[0];
@@ -356,8 +422,6 @@ function fetchWeather(){
     +'&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen')
   .then(function(r){return r.json();}).then(function(d){
     var c=d.current;
-
-    // AQI
     var aqi=c.european_aqi!=null?c.european_aqi:c.us_aqi;
     if(aqi!=null){
       var ai=aqiInfo(aqi);
@@ -372,8 +436,6 @@ function fetchWeather(){
       document.getElementById('envDivider').style.display='block';
       if(changed) flashEl(aqiEl);
     }
-
-    // Pollen
     var pvs=[
       {n:'GRASS',v:c.grass_pollen},
       {n:'BIRCH',v:c.birch_pollen},
@@ -396,7 +458,6 @@ function fetchWeather(){
   }).catch(function(){});
 }
 
-/* setVal — sets text and flashes if value actually changed */
 function setVal(id, val){
   var el=document.getElementById(id);
   if(!el) return;
@@ -439,70 +500,62 @@ window.addEventListener('devicemotion',function(e){
 },true);
 
 /* ══════════════════════════════════════
-   COMPASS ROSE
+   BEARING BAR
 ══════════════════════════════════════ */
 var compassHeading=0, hasRealHeading=false;
-var compassCanvas=document.getElementById('compass');
-var cctx=compassCanvas.getContext('2d');
 
-function drawCompass(){
-  requestAnimationFrame(drawCompass);
-  var s=80, cx=s/2, cy=s/2, r=34;
-  cctx.clearRect(0,0,s,s);
-
-  // outer ring
-  cctx.save();
-  cctx.strokeStyle='rgba(0,229,255,0.25)';cctx.lineWidth=1;
-  cctx.beginPath();cctx.arc(cx,cy,r,0,Math.PI*2);cctx.stroke();
-
-  // tick marks
-  for(var i=0;i<360;i+=45){
-    var a=(i-90)*Math.PI/180;
-    var inner=i%90===0?r-8:r-5;
-    cctx.strokeStyle=i===0?'rgba(255,23,68,0.8)':'rgba(0,229,255,0.3)';
-    cctx.lineWidth=i%90===0?1.5:1;
-    cctx.beginPath();
-    cctx.moveTo(cx+Math.cos(a)*inner,cy+Math.sin(a)*inner);
-    cctx.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);
-    cctx.stroke();
+// Build the tick track — 720 degrees worth so we can scroll smoothly
+(function buildBearingTrack(){
+  var track = document.getElementById('bearingTrack');
+  var CARDS = {0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+  // build 3 full loops (0-359 × 3) for seamless wrapping
+  for(var loop=0;loop<3;loop++){
+    for(var deg=0;deg<360;deg+=5){
+      var tick = document.createElement('div');
+      tick.className='btick';
+      var isMajor = deg%45===0;
+      var line = document.createElement('div');
+      line.className='btick-line'+(isMajor?' major':'');
+      tick.appendChild(line);
+      if(isMajor){
+        var lbl = document.createElement('div');
+        var card = CARDS[deg];
+        lbl.className='btick-lbl'+(card?' card':'')+(card==='N'&&loop===1?' north':'');
+        lbl.textContent = card || deg;
+        tick.appendChild(lbl);
+      }
+      track.appendChild(tick);
+    }
   }
+})();
 
-  // cardinal labels
-  var cards=['N','E','S','W'];
-  cctx.font='bold 8px Orbitron,monospace';
-  cards.forEach(function(c,i){
-    var a=(i*90-compassHeading-90)*Math.PI/180;
-    var lx=cx+Math.cos(a)*(r-13);
-    var ly=cy+Math.sin(a)*(r-13)+3;
-    cctx.fillStyle=c==='N'?'rgba(255,23,68,0.9)':'rgba(0,229,255,0.65)';
-    if(c==='N') cctx.shadowColor='rgba(255,23,68,0.6)',cctx.shadowBlur=6;
-    else cctx.shadowBlur=0;
-    cctx.fillText(c,lx-cctx.measureText(c).width/2,ly);
-  });
-  cctx.shadowBlur=0;
+var TICK_W = 20; // px per 5° tick
+var TOTAL_TICKS = 72; // 360/5
 
-  // heading pointer (fixed pointing up = current heading direction)
-  cctx.save();
-  cctx.translate(cx,cy);
-  cctx.rotate(-compassHeading*Math.PI/180);
-  cctx.fillStyle='rgba(0,229,255,0.85)';
-  cctx.shadowColor='rgba(0,229,255,0.6)';cctx.shadowBlur=6;
-  cctx.beginPath();cctx.moveTo(0,-(r-3));cctx.lineTo(-4,4);cctx.lineTo(4,4);cctx.closePath();cctx.fill();
-  cctx.shadowBlur=0;
-  cctx.restore();
+function updateBearing(){
+  requestAnimationFrame(updateBearing);
+  var h = ((compassHeading % 360) + 360) % 360;
 
-  // centre dot
-  cctx.fillStyle='rgba(0,229,255,0.5)';
-  cctx.beginPath();cctx.arc(cx,cy,2.5,0,Math.PI*2);cctx.fill();
-  cctx.restore();
+  // offset: centre of middle loop (loop=1) is at tick index 72 + (h/5)
+  var tickIndex = 72 + h/5;
+  var centreOffset = tickIndex * TICK_W;
+  var wrapWidth = document.getElementById('bearingWrap').offsetWidth || 180;
+  var x = -(centreOffset - wrapWidth/2);
+  document.getElementById('bearingTrack').style.transform = 'translateX('+x+'px)';
+
+  // heading label
+  var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var dir = dirs[Math.round(h/22.5)%16];
+  document.getElementById('hdgVal').textContent = 'HDG '+Math.round(h).toString().padStart(3,'0')+'° '+dir;
 }
-drawCompass();
 
-// hook real orientation
+updateBearing();
+
 window.addEventListener('deviceorientation',function(e){
   var h=e.webkitCompassHeading!=null?e.webkitCompassHeading:(e.alpha!=null?(360-e.alpha):null);
   if(h!=null){compassHeading=((h%360)+360)%360;hasRealHeading=true;}
 },true);
+
 function addAlert(msg,type){
   alertsState.unshift({msg:msg,type:type});
   alertsState=alertsState.slice(0,4);
@@ -535,7 +588,6 @@ function drawHud2D(){
   function glow(c,b){ctx.shadowColor=c;ctx.shadowBlur=b;}
   function ng(){ctx.shadowBlur=0;ctx.shadowColor='transparent';}
 
-  // corners
   ctx.save();ctx.strokeStyle='rgba(0,229,255,0.4)';ctx.lineWidth=2;
   [[20,20,1,1],[w-20,20,-1,1],[20,h-20,1,-1],[w-20,h-20,-1,-1]].forEach(function(c){
     ctx.beginPath();ctx.moveTo(c[0],c[1]+c[3]*40);ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0]+c[2]*40,c[1]);ctx.stroke();
@@ -544,10 +596,9 @@ function drawHud2D(){
   var n=new Date();
   var ts=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds());
 
-  // TOP LEFT: clock + date + area
   ctx.save();
   glow(C,12);ctx.fillStyle=C;ctx.font='700 38px Orbitron,monospace';ctx.fillText(ts,22,52);ng();
-  ctx.fillStyle='rgba(0,229,255,0.5)';ctx.font='12px "Share Tech Mono",monospace';
+  ctx.fillStyle='rgba(0,229,255,0.75)';ctx.font='bold 12px "Share Tech Mono",monospace';
   ctx.fillText(DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear(),22,70);
   if(lastArea){
     glow(C,8);ctx.fillStyle=C;ctx.font='700 14px "Share Tech Mono",monospace';
@@ -555,36 +606,33 @@ function drawHud2D(){
   }
   ctx.restore();
 
-  // TOP RIGHT: bars
   ctx.save();
   var bx=w-210,by=34;
   function bar(lbl,pct,col){
-    ctx.fillStyle='rgba(0,229,255,0.4)';ctx.font='11px "Share Tech Mono",monospace';ctx.fillText(lbl,bx,by);
+    ctx.fillStyle='rgba(0,229,255,0.7)';ctx.font='bold 11px "Share Tech Mono",monospace';ctx.fillText(lbl,bx,by);
     ctx.fillStyle='rgba(0,229,255,0.08)';ctx.fillRect(bx+40,by-12,120,6);
-    ctx.strokeStyle='rgba(0,229,255,0.18)';ctx.lineWidth=1;ctx.strokeRect(bx+40,by-12,120,6);
+    ctx.strokeStyle='rgba(0,229,255,0.2)';ctx.lineWidth=1;ctx.strokeRect(bx+40,by-12,120,6);
     ctx.fillStyle=col;ctx.fillRect(bx+40,by-12,120*clamp(pct,0,100)/100,6);
-    ctx.fillStyle='rgba(0,229,255,0.85)';ctx.font='12px "Share Tech Mono",monospace';ctx.fillText(Math.round(pct)+'%',bx+168,by);
+    ctx.fillStyle='rgba(0,229,255,0.95)';ctx.font='bold 12px "Share Tech Mono",monospace';ctx.fillText(Math.round(pct)+'%',bx+168,by);
     by+=22;
   }
   bar('BAT',batPct,batPct>50?C3:batPct>20?C2:CR);
   bar('WIFI',wifiPct,C);
   ctx.restore();
 
-  // BOTTOM LEFT: coords + GPS status
   ctx.save();
-  ctx.fillStyle='rgba(0,229,255,0.35)';ctx.font='11px "Share Tech Mono",monospace';
+  ctx.fillStyle='rgba(0,229,255,0.55)';ctx.font='bold 11px "Share Tech Mono",monospace';
   ctx.fillText('LAT',22,h-46);ctx.fillText('LON',22,h-29);
-  ctx.fillStyle=C;ctx.font='13px "Share Tech Mono",monospace';
+  ctx.fillStyle=C;ctx.font='bold 13px "Share Tech Mono",monospace';
   ctx.fillText(lat!=null?lat.toFixed(5)+'°':'ACQUIRING',46,h-46);
   ctx.fillText(lon!=null?lon.toFixed(5)+'°':'ACQUIRING',46,h-29);
   var gs=document.getElementById('gpsS');
   var gc=gs?gs.className:'';
   ctx.fillStyle=gc.indexOf('locked')>-1?C3:gc.indexOf('denied')>-1?CR:C2;
-  ctx.font='11px "Share Tech Mono",monospace';
+  ctx.font='bold 11px "Share Tech Mono",monospace';
   ctx.fillText(gs?gs.textContent:'● GPS ACQUIRING',22,h-12);
   ctx.restore();
 
-  // BOTTOM RIGHT: weather stack
   ctx.save();
   var wt=document.getElementById('wTemp').textContent;
   var wc=document.getElementById('wCond').textContent;
@@ -593,42 +641,37 @@ function drawHud2D(){
   var ws=document.getElementById('wSun').textContent;
 
   function rtext(str,y,col,font){
-    ctx.fillStyle=col||'rgba(0,229,255,0.4)';
-    ctx.font=font||'12px "Share Tech Mono",monospace';
+    ctx.fillStyle=col||'rgba(0,229,255,0.65)';
+    ctx.font=font||'bold 12px "Share Tech Mono",monospace';
     ctx.fillText(str,w-ctx.measureText(str).width-22,y);
   }
 
   glow(C,10);ctx.fillStyle=C;ctx.font='700 34px Orbitron,monospace';
   ctx.fillText(wt,w-ctx.measureText(wt).width-22,h-104);ng();
-  rtext(wc,      h-84,'rgba(0,229,255,0.5)','12px "Share Tech Mono",monospace');
+  rtext(wc,      h-84,'rgba(0,229,255,.8)','bold 12px "Share Tech Mono",monospace');
   rtext('WIND '+ww+' km/h', h-66);
   rtext('HUM '+wh,          h-50);
-  rtext(ws,                 h-36,'rgba(0,229,255,0.28)','11px "Share Tech Mono",monospace');
+  rtext(ws,                 h-36,'rgba(0,229,255,.55)','bold 11px "Share Tech Mono",monospace');
 
-  // divider
   var aqiEl=document.getElementById('wAqi');
   var polEl=document.getElementById('wPollen');
   var hasEnv=(aqiEl&&aqiEl.textContent!=='--')||(polEl&&polEl.textContent!=='--');
   if(hasEnv){
-    ctx.strokeStyle='rgba(0,229,255,0.12)';ctx.lineWidth=1;
+    ctx.strokeStyle='rgba(0,229,255,0.15)';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(w-210,h-26);ctx.lineTo(w-22,h-26);ctx.stroke();
   }
   if(aqiEl&&aqiEl.textContent!=='--'){
     var al=document.getElementById('wAqiLbl').textContent;
     var ac=aqiEl.style.color||C;
-    rtext('AQI '+aqiEl.textContent+' '+al, h-14, ac, '12px "Share Tech Mono",monospace');
+    rtext('AQI '+aqiEl.textContent+' '+al, h-14, ac, 'bold 12px "Share Tech Mono",monospace');
   }
-
-  var py=h-(hasEnv?2:2);
   if(polEl&&polEl.textContent!=='--'){
     var pl=document.getElementById('wPollenLbl').textContent;
     var pc=polEl.style.color||C;
-    // shift up if AQI also showing
     var aqiShowing=aqiEl&&aqiEl.textContent!=='--';
-    rtext('POLLEN '+polEl.textContent+' '+pl, aqiShowing?h-28:h-14, pc,'12px "Share Tech Mono",monospace');
+    rtext('POLLEN '+polEl.textContent+' '+pl, aqiShowing?h-28:h-14, pc,'bold 12px "Share Tech Mono",monospace');
   }
 
-  // alerts
   if(alertsState.length){
     var ay=20;
     alertsState.slice(0,3).forEach(function(a){
