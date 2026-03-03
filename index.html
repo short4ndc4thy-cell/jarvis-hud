@@ -6,185 +6,140 @@
 <title>HUD</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
-:root{
-  --c:#00e5ff;--c2:#ff6d00;--c3:#76ff03;--cr:#ff1744;
-  --glow:0 0 10px rgba(0,229,255,.6);
-  --glow3:0 0 8px rgba(118,255,3,.5);
-}
+
+/* ── THEMES ── */
+body.theme-cyan{ --c:#00e5ff; --glow:0 0 10px rgba(0,229,255,.6); }
+body.theme-green{ --c:#76ff03; --glow:0 0 10px rgba(118,255,3,.6); }
+body.theme-amber{ --c:#ffb300; --glow:0 0 10px rgba(255,179,0,.6); }
+body.theme-red{   --c:#ff1744; --glow:0 0 10px rgba(255,23,68,.6); }
+body.theme-white{ --c:#e0e0e0; --glow:0 0 8px rgba(220,220,220,.4); }
+
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100vw;height:100vh;overflow:hidden;background:transparent;}
 body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
-/* ── CORNERS ── */
-.corner{position:fixed;width:32px;height:32px;border-color:rgba(0,229,255,.4);border-style:solid;z-index:10;transition:opacity .4s;}
+.corner{position:fixed;width:32px;height:32px;border-color:var(--c);opacity:.4;border-style:solid;z-index:10;}
 .corner.tl{top:14px;left:14px;border-width:1.5px 0 0 1.5px;}
 .corner.tr{top:14px;right:14px;border-width:1.5px 1.5px 0 0;}
 .corner.bl{bottom:14px;left:14px;border-width:0 0 1.5px 1.5px;}
 .corner.br{bottom:14px;right:14px;border-width:0 1.5px 1.5px 0;}
 
-/* ── TOP LEFT: time + location ── */
 .tl{position:fixed;top:18px;left:18px;display:flex;flex-direction:column;gap:4px;z-index:10;}
 .clock{font-family:'Orbitron',monospace;font-size:1.6rem;font-weight:900;color:var(--c);text-shadow:var(--glow);letter-spacing:.08em;line-height:1;}
-.date{font-size:.7rem;font-weight:700;color:rgba(0,229,255,.75);letter-spacing:.15em;}
-.area{font-size:.72rem;color:var(--c);letter-spacing:.12em;margin-top:2px;text-shadow:var(--glow);transition:color .4s;}
-.street{font-size:.62rem;font-weight:700;color:rgba(0,229,255,.8);letter-spacing:.08em;margin-top:1px;}
+.date{font-size:.7rem;font-weight:700;color:var(--c);opacity:.7;letter-spacing:.15em;}
+.area{font-size:.72rem;font-weight:700;color:var(--c);letter-spacing:.12em;margin-top:2px;text-shadow:var(--glow);}
+.street{font-size:.6rem;font-weight:700;color:var(--c);opacity:.7;letter-spacing:.08em;}
 .area.updating{animation:pulse-text .6s ease;}
 @keyframes pulse-text{
-  0%{opacity:1;text-shadow:0 0 20px rgba(0,229,255,1),0 0 40px rgba(0,229,255,.6);}
-  50%{opacity:.4;}
-  100%{opacity:1;text-shadow:var(--glow);}
+  0%{opacity:1;text-shadow:0 0 20px var(--c),0 0 40px var(--c);}
+  50%{opacity:.4;}100%{opacity:1;text-shadow:var(--glow);}
 }
 
-/* ── BACKDROP PANELS ── */
-.panel{background:rgba(0,0,0,.52);border:1px solid rgba(0,229,255,.13);backdrop-filter:blur(4px);padding:7px 10px;}
-
-/* ── TOP RIGHT: battery + wifi ── */
-.tr{position:fixed;top:18px;right:18px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;z-index:10;}
+.tr{position:fixed;top:18px;right:18px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;z-index:10;}
 .stat{display:flex;align-items:center;gap:7px;}
-.slbl{font-size:.54rem;font-weight:700;color:rgba(0,229,255,.7);letter-spacing:.15em;}
-.sbar{width:64px;height:4px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.2);overflow:hidden;position:relative;}
+.slbl{font-size:.54rem;font-weight:700;color:var(--c);opacity:.65;letter-spacing:.15em;}
+.sbar{width:64px;height:4px;background:rgba(255,255,255,.05);border:1px solid var(--c);overflow:hidden;}
+.sbar{border-color:var(--c);opacity-border:.2;}
 .sf{height:100%;transition:width 1s ease;}
-.sf.g{background:var(--c3);box-shadow:0 0 6px rgba(118,255,3,.5);}
-.sf.c{background:var(--c);box-shadow:0 0 6px rgba(0,229,255,.4);}
-.sf.o{background:var(--c2);}
-.sf.r{background:var(--cr);}
-.sval{font-size:.6rem;font-weight:700;color:rgba(0,229,255,.95);min-width:28px;text-align:right;transition:color .4s;}
+.sf.g{background:#76ff03;box-shadow:0 0 6px rgba(118,255,3,.5);}
+.sf.c{background:var(--c);box-shadow:0 0 4px var(--c);}
+.sf.o{background:#ff6d00;}
+.sf.r{background:#ff1744;}
+.sval{font-size:.6rem;font-weight:700;color:var(--c);min-width:28px;text-align:right;}
+.sys-row{font-size:.56rem;font-weight:700;color:var(--c);display:flex;gap:5px;align-items:center;justify-content:flex-end;}
+.sys-lbl{opacity:.5;}
 
-/* ── BEARING BAR ── */
-#bearingWrap{width:180px;overflow:hidden;position:relative;height:28px;}
-#bearingTrack{display:flex;align-items:center;height:100%;position:absolute;white-space:nowrap;transition:transform .15s linear;}
-.btick{display:inline-flex;flex-direction:column;align-items:center;width:20px;flex-shrink:0;}
-.btick-line{width:1px;background:rgba(0,229,255,.35);height:8px;}
-.btick-line.major{background:rgba(0,229,255,.7);height:13px;}
-.btick-lbl{font-size:.42rem;font-weight:700;color:rgba(0,229,255,.55);letter-spacing:.05em;margin-top:2px;}
-.btick-lbl.card{color:var(--c);font-size:.48rem;}
-.btick-lbl.north{color:#ff1744;}
-/* centre reticle */
-#bearingWrap::before{content:'';position:absolute;left:50%;top:0;transform:translateX(-50%);width:1px;height:100%;background:rgba(0,229,255,.5);z-index:2;}
-#bearingWrap::after{content:'▼';position:absolute;left:50%;top:-1px;transform:translateX(-50%);font-size:.5rem;color:var(--c);z-index:2;line-height:1;}
-#hdgVal{font-family:'Orbitron',monospace;font-size:.75rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.1em;text-align:center;margin-top:2px;}
+/* BEARING */
+#bearingWrap{width:200px;overflow:hidden;position:relative;height:32px;}
+#bearingCanvas{position:absolute;top:0;left:0;}
+#hdgVal{font-family:'Orbitron',monospace;font-size:.72rem;font-weight:700;color:var(--c);text-shadow:var(--glow);letter-spacing:.1em;text-align:center;margin-top:1px;}
 
-/* ── BOTTOM LEFT: GPS ── */
 .bl{position:fixed;bottom:18px;left:18px;display:flex;flex-direction:column;gap:3px;z-index:10;}
 .loc-row{display:flex;gap:6px;align-items:baseline;}
-.lloc{font-size:.56rem;font-weight:700;color:rgba(0,229,255,.55);letter-spacing:.14em;width:20px;}
-.lval{font-size:.7rem;font-weight:700;color:var(--c);letter-spacing:.03em;transition:color .3s;}
-.gps-status{font-size:.58rem;font-weight:700;letter-spacing:.14em;margin-top:2px;transition:color .4s;}
-.gps-status.acquiring{color:var(--c2);animation:blink-acq 1.2s ease-in-out infinite;}
-.gps-status.locked{color:var(--c3);}
-.gps-status.denied{color:var(--cr);}
-@keyframes blink-acq{0%,100%{opacity:1;}50%{opacity:.35;}}
+.lloc{font-size:.56rem;font-weight:700;color:var(--c);opacity:.5;letter-spacing:.14em;width:22px;}
+.lval{font-size:.68rem;font-weight:700;color:var(--c);letter-spacing:.03em;}
+.gps-status{font-size:.56rem;font-weight:700;letter-spacing:.14em;margin-top:2px;}
+.gps-status.acquiring{color:#ff6d00;animation:blink-acq 1.2s ease-in-out infinite;}
+.gps-status.locked{color:#76ff03;}
+.gps-status.denied{color:#ff1744;}
+@keyframes blink-acq{0%,100%{opacity:1;}50%{opacity:.3;}}
 
-/* ── BOTTOM RIGHT: weather ── */
+#poiPanel{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:3px;max-width:210px;}
+.poi-hdr{font-size:.42rem;letter-spacing:.2em;color:var(--c);opacity:.4;margin-bottom:2px;}
+.poi-row{font-size:.52rem;font-weight:700;color:var(--c);letter-spacing:.04em;display:flex;gap:5px;align-items:baseline;opacity:.9;}
+.poi-dist{opacity:.55;min-width:40px;}
+
 .br{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:4px;align-items:flex-end;z-index:10;}
-.temp{font-family:'Orbitron',monospace;font-size:1.4rem;font-weight:700;color:var(--c);text-shadow:var(--glow);transition:color .4s;}
-.cond{font-size:.64rem;font-weight:700;color:rgba(0,229,255,.8);letter-spacing:.16em;}
-.wrow{font-size:.6rem;font-weight:700;color:rgba(0,229,255,.65);display:flex;gap:6px;align-items:center;}
-.wval{color:rgba(0,229,255,.95);transition:color .3s;}
-.sunrow{font-size:.54rem;font-weight:700;color:rgba(0,229,255,.55);}
-.divider{width:100%;height:1px;background:rgba(0,229,255,.15);margin:2px 0;}
+.temp{font-family:'Orbitron',monospace;font-size:1.4rem;font-weight:700;color:var(--c);text-shadow:var(--glow);}
+.cond{font-size:.64rem;font-weight:700;color:var(--c);opacity:.8;letter-spacing:.16em;}
+.wrow{font-size:.6rem;font-weight:700;color:var(--c);opacity:.7;display:flex;gap:6px;align-items:center;}
+.wval{opacity:1;}
+.sunrow{font-size:.54rem;font-weight:700;color:var(--c);opacity:.5;}
+.divider{width:100%;height:1px;background:var(--c);opacity:.15;margin:2px 0;}
 
-/* value-change pulse — applied via JS */
 .flash{animation:flash-val .7s ease;}
-@keyframes flash-val{
-  0%{opacity:1;filter:brightness(3);}
-  40%{opacity:.5;}
-  100%{opacity:1;filter:brightness(1);}
-}
+@keyframes flash-val{0%{opacity:1;filter:brightness(3);}40%{opacity:.5;}100%{opacity:1;filter:brightness(1);}}
 
-/* ── ALERTS ── */
 .alerts{position:fixed;top:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:3px;align-items:center;z-index:20;pointer-events:none;}
 .alert{font-size:.52rem;font-weight:700;letter-spacing:.16em;padding:.15rem .55rem;border:1px solid;text-transform:uppercase;animation:alert-in .25s ease both;}
-.alert.ok  {border-color:rgba(118,255,3,.4);color:var(--c3);}
-.alert.warn{border-color:rgba(255,109,0,.45);color:var(--c2);}
-.alert.info{border-color:rgba(0,229,255,.35);color:var(--c);}
-.alert.danger{border-color:rgba(255,23,68,.45);color:var(--cr);}
+.alert.ok   {border-color:rgba(118,255,3,.4);color:#76ff03;}
+.alert.warn {border-color:rgba(255,109,0,.45);color:#ff6d00;}
+.alert.info {border-color:var(--c);color:var(--c);opacity:.85;}
+.alert.danger{border-color:rgba(255,23,68,.45);color:#ff1744;}
 @keyframes alert-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
 
-/* ── AR BUTTON ── */
+/* THEME PICKER */
+#themePicker{position:fixed;bottom:54px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:100;align-items:center;}
+.tpBtn{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.18);cursor:pointer;transition:transform .15s,border-color .15s;}
+.tpBtn:hover,.tpBtn.active{transform:scale(1.4);border-color:rgba(255,255,255,.7);}
+.tpBtn.tc{background:#00e5ff;}.tpBtn.tg{background:#76ff03;}.tpBtn.ta{background:#ffb300;}.tpBtn.tr2{background:#ff1744;}.tpBtn.tw{background:#ddd;}
+
 #xrbtn{
   position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
-  background:transparent;border:1px solid rgba(0,229,255,.4);color:var(--c);
+  background:transparent;border:1px solid var(--c);color:var(--c);
   font-family:'Orbitron',monospace;font-size:.55rem;letter-spacing:.22em;
   padding:.4rem .9rem;cursor:pointer;text-transform:uppercase;z-index:100;
-  pointer-events:all;text-shadow:var(--glow);transition:background .2s;
+  text-shadow:var(--glow);transition:all .2s;opacity:.75;
 }
-#xrbtn:hover{background:rgba(0,229,255,.08);}
-
-/* iOS perm */
-#permBtn{
-  display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-  background:rgba(0,0,0,.85);border:1px solid var(--c);color:var(--c);
-  font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.22em;
-  padding:.7rem 1.5rem;cursor:pointer;text-transform:uppercase;z-index:9999;text-shadow:var(--glow);
-}
-
+#xrbtn:hover{opacity:1;background:var(--c);color:#000;}
+#permBtn{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.85);border:1px solid var(--c);color:var(--c);font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.22em;padding:.7rem 1.5rem;cursor:pointer;text-transform:uppercase;z-index:9999;text-shadow:var(--glow);}
 #hud2d{display:none;}
 #hudMirror{position:fixed;right:10px;bottom:10px;width:180px;height:90px;border:1px solid rgba(0,229,255,.18);display:none;z-index:10000;}
 </style>
 </head>
-<body>
+<body class="theme-cyan">
 <canvas id="hudMirror" width="180" height="90"></canvas>
 <canvas id="hud2d" width="900" height="450"></canvas>
 
 <div class="corner tl"></div><div class="corner tr"></div>
 <div class="corner bl"></div><div class="corner br"></div>
 
-<!-- TOP LEFT -->
-<div class="tl panel">
+<div class="tl">
   <div class="clock" id="clock">00:00:00</div>
   <div class="date"  id="date">-- --- ----</div>
-  <div class="area"   id="area">LOCATING...</div>
+  <div class="area"  id="area">LOCATING...</div>
   <div class="street" id="street"></div>
 </div>
 
-<!-- TOP RIGHT -->
-<div class="tr panel">
-  <div class="stat">
-    <div class="slbl">BAT</div>
-    <div class="sbar"><div class="sf g" id="batF" style="width:85%"></div></div>
-    <div class="sval" id="batV">85%</div>
-  </div>
-  <div class="stat">
-    <div class="slbl">WIFI</div>
-    <div class="sbar"><div class="sf c" id="wifiF" style="width:90%"></div></div>
-    <div class="sval" id="wifiV">90%</div>
-  </div>
+<div class="tr">
+  <div class="stat"><div class="slbl">BAT</div><div class="sbar"><div class="sf g" id="batF" style="width:85%"></div></div><div class="sval" id="batV">85%</div></div>
+  <div class="stat"><div class="slbl">NET</div><div class="sbar"><div class="sf c" id="netF" style="width:0%"></div></div><div class="sval" id="netV">--</div></div>
+  <div class="sys-row"><span class="sys-lbl">CPU</span><span id="cpuV">--%</span></div>
+  <div class="sys-row"><span class="sys-lbl">MEM</span><span id="memV">-- MB</span></div>
 </div>
 
-<!-- BOTTOM LEFT -->
-<div class="bl panel">
-  <!-- BEARING BAR replaces compass -->
-  <div id="bearingWrap"><div id="bearingTrack"></div></div>
+<div class="bl">
+  <div id="bearingWrap"><canvas id="bearingCanvas"></canvas></div>
   <div id="hdgVal">HDG ---°</div>
-  <div style="height:5px"></div>
+  <div style="height:4px"></div>
   <div class="loc-row"><div class="lloc">LAT</div><div class="lval" id="latV">--</div></div>
   <div class="loc-row"><div class="lloc">LON</div><div class="lval" id="lonV">--</div></div>
-  <div class="loc-row"><div class="lloc">SPD</div><div class="lval" id="speedVal">0.0</div><div class="lloc" style="margin-left:2px">km/h</div></div>
-  <div class="loc-row"><div class="lloc">G</div><div class="lval" id="gVal">1.00</div></div>
   <div class="gps-status acquiring" id="gpsS">● GPS ACQUIRING</div>
 </div>
 
-<!-- WAYPOINTS — left middle -->
-<div id="wpPanel" style="position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:5px;"></div>
+<div id="poiPanel"></div>
 
-<!-- MINIMAP for waypoints -->
-<div id="mapWrap" style="position:fixed;left:18px;top:50%;transform:translateY(-50%) translateY(-120px);z-index:10;display:flex;flex-direction:column;gap:3px;">
-  <div style="font-size:.42rem;font-weight:700;color:rgba(0,229,255,.45);letter-spacing:.2em;">TAP TO SET WAYPOINT</div>
-  <div style="position:relative;width:110px;height:110px;border:1px solid rgba(0,229,255,.25);overflow:hidden;">
-    <div id="minimap" style="width:110px;height:110px;"></div>
-    <div style="position:absolute;inset:0;pointer-events:none;z-index:1000;">
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
-        <div style="width:5px;height:5px;background:var(--c);box-shadow:0 0 8px var(--c);position:relative;z-index:2;"></div>
-      </div>
-      <div id="mapHdgLine" style="position:absolute;top:50%;left:50%;width:28px;height:1px;background:linear-gradient(to right,var(--c),transparent);transform-origin:left center;transition:transform .3s;"></div>
-    </div>
-  </div>
-  <div id="wpDist" style="font-size:.44rem;font-weight:700;color:var(--c2);letter-spacing:.1em;text-align:right;"></div>
-</div>
-
-<!-- BOTTOM RIGHT -->
-<div class="br panel">
+<div class="br">
   <div class="temp" id="wTemp">--°</div>
   <div class="cond" id="wCond">--</div>
   <div class="wrow"><span>WIND</span><span class="wval" id="wWind">--</span><span>km/h</span></div>
@@ -192,47 +147,66 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
   <div class="sunrow" id="wSun">↑ -- · ↓ --</div>
   <div class="divider" id="envDivider" style="display:none"></div>
   <div class="wrow" id="aqiRow"    style="display:none"><span>AQI</span><span class="wval" id="wAqi">--</span><span id="wAqiLbl"></span></div>
-  <div class="wrow" id="pollenRow" style="display:none"><span>POLLEN</span><span class="wval" id="wPollen">--</span><span id="wPollenLbl" style="color:rgba(0,229,255,.55)"></span></div>
+  <div class="wrow" id="pollenRow" style="display:none"><span>POLLEN</span><span class="wval" id="wPollen">--</span><span id="wPollenLbl"></span></div>
 </div>
 
 <div class="alerts" id="alerts"></div>
+
+<div id="themePicker">
+  <div class="tpBtn tc active" onclick="setTheme('cyan',this)"  title="Cyan"></div>
+  <div class="tpBtn tg"        onclick="setTheme('green',this)" title="Green"></div>
+  <div class="tpBtn ta"        onclick="setTheme('amber',this)" title="Amber"></div>
+  <div class="tpBtn tr2"       onclick="setTheme('red',this)"   title="Red"></div>
+  <div class="tpBtn tw"        onclick="setTheme('white',this)" title="White"></div>
+</div>
+
 <button id="xrbtn"   onclick="enterXR()">◈ ENTER AR MODE</button>
 <button id="permBtn" onclick="requestPerms()">◈ ENABLE SENSORS</button>
 
 <script>
-/* ══════════════════════════════════════
-   STATE
-══════════════════════════════════════ */
-var lat=null, lon=null, geoWatchId=null;
-var batPct=85, wifiPct=90;
+/* ── THEMES ── */
+var THEMES={
+  cyan: {c:'#00e5ff',c2:'#ff6d00',c3:'#76ff03',cr:'#ff1744'},
+  green:{c:'#76ff03',c2:'#ff6d00',c3:'#00e5ff',cr:'#ff1744'},
+  amber:{c:'#ffb300',c2:'#ff6d00',c3:'#76ff03',cr:'#ff1744'},
+  red:  {c:'#ff1744',c2:'#ff6d00',c3:'#76ff03',cr:'#ff6d00'},
+  white:{c:'#e0e0e0',c2:'#ff6d00',c3:'#76ff03',cr:'#ff1744'}
+};
+var currentTheme='cyan';
+function setTheme(name,btn){
+  currentTheme=name;
+  document.body.className='theme-'+name;
+  document.querySelectorAll('.tpBtn').forEach(function(b){b.classList.remove('active');});
+  if(btn) btn.classList.add('active');
+}
+function TC(){return THEMES[currentTheme].c;}
+function TC2(){return THEMES[currentTheme].c2;}
+function TC3(){return THEMES[currentTheme].c3;}
+function TCR(){return THEMES[currentTheme].cr;}
+
+/* ── STATE ── */
+var lat=null,lon=null,geoWatchId=null;
+var batPct=85;
 var weatherFetched=false;
-var lastArea='', lastAqi=null, lastPollen=null;
+var lastArea='',lastStreet='',lastAqi=null,lastPollen=null;
 var alertsState=[];
 var isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
-var DAYS   =['SUN','MON','TUE','WED','THU','FRI','SAT'];
-var MONTHS =['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+var DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+var GPS_TIMEOUT=60000,GPS_RETRY_DELAY=5000,gpsRetryTimer=null,gpsAttempts=0,GPS_MAX_ATTEMPTS=10;
+var compassHeading=0,targetHeading=0;
+var poiData=[];
+var cpuSamples=[];
 
-/* GPS retry config */
-var GPS_TIMEOUT = 60000;      // 60 s before a single attempt times out
-var GPS_RETRY_DELAY = 5000;   // wait 5 s between retries
-var gpsRetryTimer = null;
-var gpsAttempts = 0;
-var GPS_MAX_ATTEMPTS = 10;    // stop trying after 10 consecutive errors
-
-/* ══════════════════════════════════════
-   BOOT
-══════════════════════════════════════ */
+/* ── BOOT ── */
 window.addEventListener('DOMContentLoaded',function(){
-  startClock();
-  startBattery();
-  startGPS();
+  startClock(); startBattery(); startGPS(); startSysStats(); startNetwork();
+  startBearingLoop();
   if(isIOS) document.getElementById('permBtn').style.display='block';
   addAlert('HUD ONLINE','ok');
 });
 
-/* ══════════════════════════════════════
-   CLOCK
-══════════════════════════════════════ */
+/* ── CLOCK ── */
 function startClock(){
   function tick(){
     var n=new Date();
@@ -242,27 +216,17 @@ function startClock(){
   tick(); setInterval(tick,1000);
 }
 function p(n){return String(n).padStart(2,'0');}
-function p3(n){return String(Math.round(n)).padStart(3,'0');}
 
-/* ══════════════════════════════════════
-   FLASH ANIMATION HELPER
-══════════════════════════════════════ */
-function flashEl(el){
-  if(!el) return;
-  el.classList.remove('flash');
-  void el.offsetWidth;
-  el.classList.add('flash');
-}
+/* ── FLASH ── */
+function flashEl(el){if(!el)return;el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+function setVal(id,val){var el=document.getElementById(id);if(!el)return;if(el.textContent!==String(val)){el.textContent=val;flashEl(el);}}
 
-/* ══════════════════════════════════════
-   BATTERY
-══════════════════════════════════════ */
+/* ── BATTERY ── */
 function startBattery(){
-  if(!navigator.getBattery) return;
+  if(!navigator.getBattery)return;
   navigator.getBattery().then(function(bat){
     function upd(){
-      var prev=batPct;
-      batPct=Math.round(bat.level*100);
+      var prev=batPct; batPct=Math.round(bat.level*100);
       document.getElementById('batF').style.width=batPct+'%';
       document.getElementById('batV').textContent=batPct+'%';
       document.getElementById('batF').className='sf '+(batPct>50?'g':batPct>20?'o':'r');
@@ -273,15 +237,55 @@ function startBattery(){
   });
 }
 
-/* ══════════════════════════════════════
-   GPS — with timeout retry
-══════════════════════════════════════ */
+/* ── NETWORK ── */
+function startNetwork(){
+  function upd(){
+    var conn=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+    var label='--',pct=0;
+    if(conn){
+      label=(conn.effectiveType||conn.type||'--').toUpperCase();
+      var map={'slow-2g':15,'2g':30,'3g':65,'4g':90,'wifi':100,'cellular':70};
+      pct=map[conn.effectiveType]||map[conn.type]||50;
+    } else if(navigator.onLine){label='ONLINE';pct=80;}
+    else{label='OFFLINE';pct=0;}
+    document.getElementById('netF').style.width=pct+'%';
+    document.getElementById('netV').textContent=label;
+  }
+  upd();
+  window.addEventListener('online',upd); window.addEventListener('offline',upd);
+  if(navigator.connection) navigator.connection.addEventListener('change',upd);
+}
+
+/* ── CPU + MEMORY ── */
+function startSysStats(){
+  var lastT=0;
+  setInterval(function(){
+    var mem=performance.memory;
+    if(mem){
+      var usedMB=Math.round(mem.usedJSHeapSize/1048576);
+      document.getElementById('memV').textContent=usedMB+' MB';
+      document.getElementById('memV').style.color=usedMB>500?'#ff1744':usedMB>200?'#ff6d00':'';
+    } else {
+      document.getElementById('memV').textContent='N/A';
+    }
+    var now=performance.now();
+    if(lastT){
+      var jank=Math.min(100,Math.max(0,Math.round((now-lastT-16.67)/16.67*100)));
+      cpuSamples.push(jank); if(cpuSamples.length>8) cpuSamples.shift();
+      var avg=Math.round(cpuSamples.reduce(function(a,b){return a+b;},0)/cpuSamples.length);
+      document.getElementById('cpuV').textContent=avg+'%';
+      document.getElementById('cpuV').style.color=avg>80?'#ff1744':avg>50?'#ff6d00':'';
+    }
+    lastT=now;
+  },1000);
+}
+
+/* ── GPS ── */
 function startGPS(){
   if(!navigator.geolocation){setGPS('UNAVAILABLE','denied');return;}
   if(navigator.permissions){
     navigator.permissions.query({name:'geolocation'}).then(function(s){
-      if(s.state==='denied') setGPS('DENIED','denied');
-      else doWatch();
+      if(s.state==='denied') setGPS('DENIED','denied'); else doWatch();
       s.onchange=function(){
         if(s.state==='granted'&&!geoWatchId) doWatch();
         if(s.state==='denied'){clearGPSRetry();setGPS('DENIED','denied');}
@@ -289,106 +293,100 @@ function startGPS(){
     }).catch(doWatch);
   } else doWatch();
 }
-
 function clearGPSRetry(){
   clearTimeout(gpsRetryTimer);
-  if(geoWatchId!=null){
-    try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}
-    geoWatchId=null;
-  }
+  if(geoWatchId!=null){try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}geoWatchId=null;}
 }
-
 function doWatch(){
-  if(geoWatchId!=null) return;   // already watching
-  gpsAttempts++;
-  setGPS('ACQUIRING','acquiring');
-
-  geoWatchId = navigator.geolocation.watchPosition(
+  if(geoWatchId!=null) return;
+  gpsAttempts++; setGPS('ACQUIRING','acquiring');
+  geoWatchId=navigator.geolocation.watchPosition(
     function(pos){
-      // success — reset retry counter
-      gpsAttempts = 0;
-      clearTimeout(gpsRetryTimer);
-
-      var newLat=pos.coords.latitude, newLon=pos.coords.longitude;
-      var moved = lat==null || Math.abs(newLat-lat)>0.001 || Math.abs(newLon-lon)>0.001;
+      gpsAttempts=0; clearTimeout(gpsRetryTimer);
+      var newLat=pos.coords.latitude,newLon=pos.coords.longitude;
+      var moved=lat==null||Math.abs(newLat-lat)>0.0005||Math.abs(newLon-lon)>0.0005;
       lat=newLat; lon=newLon;
-      currentSpeed=(pos.coords.speed||0)*3.6;
       document.getElementById('latV').textContent=lat.toFixed(5)+'°';
       document.getElementById('lonV').textContent=lon.toFixed(5)+'°';
-      setVal('speedVal', currentSpeed.toFixed(1));
-      setVal('gVal', currentG.toFixed(2));
       setGPS('LOCKED','locked');
       fetchWeather();
-      if(moved) reverseGeocode();
+      if(moved){reverseGeocode(); fetchPOIs();}
     },
     function(e){
-      // error handler — clear watch and schedule retry
-      try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}
-      geoWatchId = null;
-
+      try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}geoWatchId=null;
+      if(e.code===1){setGPS('DENIED','denied');return;}
+      if(gpsAttempts>=GPS_MAX_ATTEMPTS){setGPS('FAILED','denied');addAlert('GPS FAILED','warn');return;}
       var codes={1:'DENIED',2:'UNAVAILABLE',3:'TIMEOUT'};
-      var msg = codes[e.code]||'ERROR';
-
-      if(e.code===1){
-        // permission denied — no point retrying
-        setGPS('DENIED','denied');
-        return;
-      }
-
-      if(gpsAttempts >= GPS_MAX_ATTEMPTS){
-        setGPS('FAILED','denied');
-        addAlert('GPS FAILED AFTER '+GPS_MAX_ATTEMPTS+' TRIES','warn');
-        return;
-      }
-
-      setGPS(msg+' RETRY '+(gpsAttempts)+'/'+GPS_MAX_ATTEMPTS,'acquiring');
-      gpsRetryTimer = setTimeout(doWatch, GPS_RETRY_DELAY);
+      setGPS((codes[e.code]||'ERROR')+' RETRY '+gpsAttempts+'/'+GPS_MAX_ATTEMPTS,'acquiring');
+      gpsRetryTimer=setTimeout(doWatch,GPS_RETRY_DELAY);
     },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: GPS_TIMEOUT   // ← was 20 000, now 60 000 ms
-    }
+    {enableHighAccuracy:true,maximumAge:0,timeout:GPS_TIMEOUT}
   );
 }
-
 function setGPS(msg,cls){
   var el=document.getElementById('gpsS');
-  el.textContent='● GPS '+msg;
-  el.className='gps-status '+cls;
+  el.textContent='● GPS '+msg; el.className='gps-status '+cls;
 }
 
-/* ══════════════════════════════════════
-   REVERSE GEOCODE — Nominatim (free, no key)
-══════════════════════════════════════ */
+/* ── REVERSE GEOCODE ── */
 var geocodeTimer=null;
 function reverseGeocode(){
   clearTimeout(geocodeTimer);
   geocodeTimer=setTimeout(function(){
-    fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json&zoom=14',
-      {headers:{'Accept-Language':'en'}})
+    fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json&zoom=16',{headers:{'Accept-Language':'en'}})
     .then(function(r){return r.json();}).then(function(d){
       var addr=d.address||{};
-      var area = addr.neighbourhood||addr.suburb||addr.city_district||addr.village||addr.town||addr.city||addr.county||addr.state||'';
-      var city = addr.city||addr.town||addr.village||'';
-      var label = area && city && area!==city ? area+', '+city : area||city||d.display_name.split(',')[0];
-      label = label.toUpperCase();
-      if(label && label!==lastArea){
+      var street=(addr.road||addr.pedestrian||addr.path||addr.footway||'').toUpperCase();
+      if(street!==lastStreet){lastStreet=street;document.getElementById('street').textContent=street;}
+      var area=addr.neighbourhood||addr.suburb||addr.city_district||addr.village||addr.town||addr.city||addr.county||addr.state||'';
+      var city=addr.city||addr.town||addr.village||'';
+      var label=(area&&city&&area!==city?area+', '+city:area||city||d.display_name.split(',')[0]).toUpperCase();
+      if(label&&label!==lastArea){
         lastArea=label;
         var el=document.getElementById('area');
-        el.classList.remove('updating');
-        void el.offsetWidth;
-        el.textContent=label;
-        el.classList.add('updating');
+        el.classList.remove('updating');void el.offsetWidth;
+        el.textContent=label;el.classList.add('updating');
         addAlert('LOCATION UPDATED','info');
       }
     }).catch(function(){});
   },3000);
 }
 
-/* ══════════════════════════════════════
-   iOS PERMS
-══════════════════════════════════════ */
+/* ── POIs ── */
+var poiTimer=null;
+function fetchPOIs(){
+  if(lat==null) return;
+  clearTimeout(poiTimer);
+  poiTimer=setTimeout(function(){
+    var q='[out:json][timeout:10];(node["amenity"~"cafe|restaurant|hospital|pharmacy|atm"](around:500,'+lat+','+lon+');node["public_transport"="stop_position"](around:500,'+lat+','+lon+'););out body 12;';
+    fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:q})
+    .then(function(r){return r.json();}).then(function(d){
+      var items=(d.elements||[]).map(function(el){
+        var dlat=el.lat-lat,dlon=el.lon-lon;
+        var dist=Math.round(Math.sqrt(dlat*dlat+dlon*dlon)*111320);
+        var bear=Math.round((Math.atan2(dlon,dlat)*180/Math.PI+360)%360);
+        var name=(el.tags&&(el.tags.name||el.tags.amenity||el.tags.public_transport)||'POI').toUpperCase().substring(0,22);
+        return{name:name,dist:dist,bear:bear};
+      }).filter(function(x){return x.dist>5;}).sort(function(a,b){return a.dist-b.dist;}).slice(0,6);
+      poiData=items; renderPOIs(items);
+    }).catch(function(){});
+  },2000);
+}
+function renderPOIs(items){
+  var panel=document.getElementById('poiPanel');
+  panel.innerHTML='';
+  if(!items.length) return;
+  var hdr=document.createElement('div'); hdr.className='poi-hdr'; hdr.textContent='NEARBY'; panel.appendChild(hdr);
+  items.forEach(function(item){
+    var row=document.createElement('div'); row.className='poi-row';
+    row.innerHTML='<span class="poi-dist">'+fmtDist(item.dist)+'</span><span style="opacity:.5">'+b2arrow(item.bear)+'</span> <span>'+item.name+'</span>';
+    panel.appendChild(row);
+  });
+}
+function fmtDist(m){return m<1000?m+'m':(m/1000).toFixed(1)+'km';}
+function b2arrow(b){return['↑','↗','→','↘','↓','↙','←','↖'][Math.round(b/45)%8];}
+
+/* ── iOS PERMS ── */
 async function requestPerms(){
   document.getElementById('permBtn').style.display='none';
   if(typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission)
@@ -398,179 +396,117 @@ async function requestPerms(){
   if(!geoWatchId) doWatch();
 }
 
-/* ══════════════════════════════════════
-   WEATHER + AQI + POLLEN
-══════════════════════════════════════ */
+/* ── WEATHER ── */
 function fetchWeather(){
-  if(weatherFetched||lat==null) return;
-  weatherFetched=true;
-
-  fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon
-    +'&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code'
-    +'&daily=sunrise,sunset&timezone=auto&forecast_days=1')
+  if(weatherFetched||lat==null) return; weatherFetched=true;
+  fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+'&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1')
   .then(function(r){return r.json();}).then(function(d){
     var c=d.current,dd=d.daily;
-    setVal('wTemp', Math.round(c.temperature_2m)+'°C');
-    setVal('wCond', wCode(c.weather_code));
-    setVal('wWind', Math.round(c.wind_speed_10m));
-    setVal('wHum',  Math.round(c.relative_humidity_2m)+'%');
+    setVal('wTemp',Math.round(c.temperature_2m)+'°C');
+    setVal('wCond',wCode(c.weather_code));
+    setVal('wWind',Math.round(c.wind_speed_10m));
+    setVal('wHum',Math.round(c.relative_humidity_2m)+'%');
     if(dd) document.getElementById('wSun').textContent='↑ '+dd.sunrise[0].split('T')[1]+' · ↓ '+dd.sunset[0].split('T')[1];
     addAlert('WEATHER OK','ok');
   }).catch(function(){});
-
-  fetch('https://air-quality-api.open-meteo.com/v1/air-quality?latitude='+lat+'&longitude='+lon
-    +'&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen')
+  fetch('https://air-quality-api.open-meteo.com/v1/air-quality?latitude='+lat+'&longitude='+lon+'&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen')
   .then(function(r){return r.json();}).then(function(d){
     var c=d.current;
     var aqi=c.european_aqi!=null?c.european_aqi:c.us_aqi;
     if(aqi!=null){
-      var ai=aqiInfo(aqi);
-      var changed=lastAqi===null||Math.abs(aqi-lastAqi)>=5;
-      lastAqi=aqi;
-      var aqiEl=document.getElementById('wAqi');
-      aqiEl.textContent=Math.round(aqi);
-      aqiEl.style.color=ai.color;
-      document.getElementById('wAqiLbl').textContent=ai.label;
-      document.getElementById('wAqiLbl').style.color=ai.color;
-      document.getElementById('aqiRow').style.display='flex';
-      document.getElementById('envDivider').style.display='block';
-      if(changed) flashEl(aqiEl);
+      var ai=aqiInfo(aqi); lastAqi=aqi;
+      var ae=document.getElementById('wAqi'); ae.textContent=Math.round(aqi); ae.style.color=ai.color;
+      document.getElementById('wAqiLbl').textContent=ai.label; document.getElementById('wAqiLbl').style.color=ai.color;
+      document.getElementById('aqiRow').style.display='flex'; document.getElementById('envDivider').style.display='block'; flashEl(ae);
     }
-    var pvs=[
-      {n:'GRASS',v:c.grass_pollen},
-      {n:'BIRCH',v:c.birch_pollen},
-      {n:'MUGWORT',v:c.mugwort_pollen}
-    ].filter(function(x){return x.v!=null;});
+    var pvs=[{n:'GRASS',v:c.grass_pollen},{n:'BIRCH',v:c.birch_pollen},{n:'MUGWORT',v:c.mugwort_pollen}].filter(function(x){return x.v!=null;});
     if(pvs.length){
       var top=pvs.reduce(function(a,b){return a.v>b.v?a:b;});
-      var pi=pollenInfo(top.v);
-      var changed2=lastPollen===null||top.v!==lastPollen;
-      lastPollen=top.v;
-      var pel=document.getElementById('wPollen');
-      pel.textContent=pi.label;
-      pel.style.color=pi.color;
+      var pi=pollenInfo(top.v); lastPollen=top.v;
+      var pe=document.getElementById('wPollen'); pe.textContent=pi.label; pe.style.color=pi.color;
       document.getElementById('wPollenLbl').textContent=top.n;
-      document.getElementById('pollenRow').style.display='flex';
-      document.getElementById('envDivider').style.display='block';
-      if(changed2) flashEl(pel);
+      document.getElementById('pollenRow').style.display='flex'; document.getElementById('envDivider').style.display='block';
       if(pi.label==='HIGH'||pi.label==='VERY HIGH') addAlert('HIGH POLLEN: '+top.n,'warn');
     }
   }).catch(function(){});
 }
+function aqiInfo(v){if(v<=20)return{label:'GOOD',color:'#76ff03'};if(v<=40)return{label:'FAIR',color:'#76ff03'};if(v<=60)return{label:'MODERATE',color:'#ff6d00'};if(v<=80)return{label:'POOR',color:'#ff6d00'};if(v<=100)return{label:'VERY POOR',color:'#ff1744'};return{label:'HAZARDOUS',color:'#ff1744'};}
+function pollenInfo(v){if(v<=10)return{label:'LOW',color:'#76ff03'};if(v<=30)return{label:'MODERATE',color:'#ff6d00'};if(v<=50)return{label:'HIGH',color:'#ff6d00'};return{label:'VERY HIGH',color:'#ff1744'};}
+function wCode(c){if(c===0)return'CLEAR';if(c<=2)return'PARTLY CLOUDY';if(c<=3)return'OVERCAST';if(c<=49)return'FOG';if(c<=59)return'DRIZZLE';if(c<=69)return'RAIN';if(c<=79)return'SNOW';if(c<=82)return'SHOWERS';if(c<=99)return'STORM';return'--';}
 
-function setVal(id, val){
-  var el=document.getElementById(id);
-  if(!el) return;
-  if(el.textContent!==String(val)){
-    el.textContent=val;
-    flashEl(el);
-  }
-}
-
-function aqiInfo(v){
-  if(v<=20) return{label:'GOOD',     color:'#76ff03'};
-  if(v<=40) return{label:'FAIR',     color:'#76ff03'};
-  if(v<=60) return{label:'MODERATE', color:'#ff6d00'};
-  if(v<=80) return{label:'POOR',     color:'#ff6d00'};
-  if(v<=100)return{label:'VERY POOR',color:'#ff1744'};
-  return         {label:'HAZARDOUS', color:'#ff1744'};
-}
-function pollenInfo(v){
-  if(v<=10) return{label:'LOW',      color:'#76ff03'};
-  if(v<=30) return{label:'MODERATE', color:'#ff6d00'};
-  if(v<=50) return{label:'HIGH',     color:'#ff6d00'};
-  return         {label:'VERY HIGH', color:'#ff1744'};
-}
-function wCode(c){
-  if(c===0)return'CLEAR';if(c<=2)return'PARTLY CLOUDY';if(c<=3)return'OVERCAST';
-  if(c<=49)return'FOG';if(c<=59)return'DRIZZLE';if(c<=69)return'RAIN';
-  if(c<=79)return'SNOW';if(c<=82)return'SHOWERS';if(c<=99)return'STORM';return'UNKNOWN';
-}
-
-/* ══════════════════════════════════════
-   SPEED + G-FORCE
-══════════════════════════════════════ */
-var currentSpeed=0, currentG=1.00;
-
-window.addEventListener('devicemotion',function(e){
-  if(!e.accelerationIncludingGravity) return;
-  var a=e.accelerationIncludingGravity;
-  currentG=Math.sqrt((a.x||0)*(a.x||0)+(a.y||0)*(a.y||0)+(a.z||0)*(a.z||0))/9.81;
-  setVal('gVal', currentG.toFixed(2));
-},true);
-
-/* ══════════════════════════════════════
-   BEARING BAR
-══════════════════════════════════════ */
-var compassHeading=0, hasRealHeading=false;
-
-// Build the tick track — 720 degrees worth so we can scroll smoothly
-(function buildBearingTrack(){
-  var track = document.getElementById('bearingTrack');
-  var CARDS = {0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
-  // build 3 full loops (0-359 × 3) for seamless wrapping
-  for(var loop=0;loop<3;loop++){
-    for(var deg=0;deg<360;deg+=5){
-      var tick = document.createElement('div');
-      tick.className='btick';
-      var isMajor = deg%45===0;
-      var line = document.createElement('div');
-      line.className='btick-line'+(isMajor?' major':'');
-      tick.appendChild(line);
-      if(isMajor){
-        var lbl = document.createElement('div');
-        var card = CARDS[deg];
-        lbl.className='btick-lbl'+(card?' card':'')+(card==='N'&&loop===1?' north':'');
-        lbl.textContent = card || deg;
-        tick.appendChild(lbl);
-      }
-      track.appendChild(tick);
-    }
-  }
-})();
-
-var TICK_W = 20; // px per 5° tick
-var TOTAL_TICKS = 72; // 360/5
-
-function updateBearing(){
-  requestAnimationFrame(updateBearing);
-  var h = ((compassHeading % 360) + 360) % 360;
-
-  // offset: centre of middle loop (loop=1) is at tick index 72 + (h/5)
-  var tickIndex = 72 + h/5;
-  var centreOffset = tickIndex * TICK_W;
-  var wrapWidth = document.getElementById('bearingWrap').offsetWidth || 180;
-  var x = -(centreOffset - wrapWidth/2);
-  document.getElementById('bearingTrack').style.transform = 'translateX('+x+'px)';
-
-  // heading label
-  var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  var dir = dirs[Math.round(h/22.5)%16];
-  document.getElementById('hdgVal').textContent = 'HDG '+Math.round(h).toString().padStart(3,'0')+'° '+dir;
-}
-
-updateBearing();
-
+/* ── BEARING BAR (canvas, rAF driven, smooth interpolation) ── */
 window.addEventListener('deviceorientation',function(e){
   var h=e.webkitCompassHeading!=null?e.webkitCompassHeading:(e.alpha!=null?(360-e.alpha):null);
-  if(h!=null){compassHeading=((h%360)+360)%360;hasRealHeading=true;}
+  if(h!=null) targetHeading=((h%360)+360)%360;
 },true);
 
-function addAlert(msg,type){
-  alertsState.unshift({msg:msg,type:type});
-  alertsState=alertsState.slice(0,4);
-  var el=document.createElement('div');
-  el.className='alert '+(type||'info');el.textContent=msg;
-  document.getElementById('alerts').appendChild(el);
-  setTimeout(function(){
-    el.style.transition='opacity .3s';el.style.opacity='0';
-    setTimeout(function(){el.remove();},300);
-  },3000);
+function startBearingLoop(){requestAnimationFrame(bearingFrame);}
+
+function bearingFrame(){
+  requestAnimationFrame(bearingFrame);
+
+  // smooth lerp, shortest path
+  var diff=targetHeading-compassHeading;
+  if(diff>180) diff-=360; if(diff<-180) diff+=360;
+  compassHeading+=diff*0.12;
+  compassHeading=((compassHeading%360)+360)%360;
+
+  // draw on canvas
+  var wrap=document.getElementById('bearingWrap');
+  var cvs=document.getElementById('bearingCanvas');
+  if(!cvs||!wrap) return;
+  var dpr=window.devicePixelRatio||1;
+  var W=wrap.offsetWidth||200, H=wrap.offsetHeight||32;
+  if(cvs.width!==Math.round(W*dpr)){
+    cvs.width=Math.round(W*dpr); cvs.height=Math.round(H*dpr);
+    cvs.style.width=W+'px'; cvs.style.height=H+'px';
+  }
+  var ctx=cvs.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+
+  var C=TC();
+  var cx=W/2;
+  var TPIX=10; // px per degree
+  var CARDS={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+  var spread=Math.ceil(cx/TPIX)+5;
+  var h=compassHeading;
+
+  for(var off=-spread;off<=spread;off++){
+    var deg=((Math.round(h)+off)%360+360)%360;
+    var x=cx+off*TPIX;
+    var isMaj=deg%45===0, isMed=deg%15===0;
+    if(!isMaj&&!isMed&&deg%5!==0) continue;
+    var tH=isMaj?16:isMed?9:5;
+    ctx.beginPath(); ctx.moveTo(x,H-tH); ctx.lineTo(x,H);
+    ctx.strokeStyle=C; ctx.globalAlpha=isMaj?0.9:isMed?0.5:0.22; ctx.lineWidth=isMaj?1.5:1; ctx.stroke(); ctx.globalAlpha=1;
+    if(isMaj){
+      var card=CARDS[deg]; var lbl=card||String(deg);
+      ctx.font=card?'bold 9px Orbitron,monospace':'bold 8px "Share Tech Mono",monospace';
+      ctx.fillStyle=deg===0?'#ff1744':C; ctx.globalAlpha=deg===0?1:0.85;
+      ctx.fillText(lbl,x-ctx.measureText(lbl).width/2,H-tH-2); ctx.globalAlpha=1;
+    }
+  }
+  // reticle line + triangle
+  ctx.strokeStyle=C; ctx.globalAlpha=0.6; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke(); ctx.globalAlpha=1;
+  ctx.fillStyle=C;
+  ctx.beginPath(); ctx.moveTo(cx-5,0); ctx.lineTo(cx+5,0); ctx.lineTo(cx,7); ctx.closePath(); ctx.fill();
+
+  var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var dir=dirs[Math.round(h/22.5)%16];
+  document.getElementById('hdgVal').textContent='HDG '+Math.round(h).toString().padStart(3,'0')+'°  '+dir;
 }
 
-/* ══════════════════════════════════════
-   XR
-══════════════════════════════════════ */
+/* ── ALERTS ── */
+function addAlert(msg,type){
+  alertsState.unshift({msg:msg,type:type}); alertsState=alertsState.slice(0,4);
+  var el=document.createElement('div'); el.className='alert '+(type||'info'); el.textContent=msg;
+  document.getElementById('alerts').appendChild(el);
+  setTimeout(function(){el.style.transition='opacity .3s';el.style.opacity='0';setTimeout(function(){el.remove();},300);},3000);
+}
+
+/* ── XR ── */
 var xrSession=null,xrRefSpace=null,xrLayer=null,gl=null;
 var prog=null,vbo=null,ibo=null,tex=null,lastUp=0,mirrorOn=false;
 var hudC=document.getElementById('hud2d');
@@ -584,190 +520,157 @@ function drawHud2D(){
   var w=hudC.width,h=hudC.height;
   var ctx=hCtx;
   ctx.clearRect(0,0,w,h);
-  var C='#00e5ff',C2='#ff6d00',C3='#76ff03',CR='#ff1744';
+  var C=TC(),C2=TC2(),C3=TC3(),CR=TCR();
   function glow(c,b){ctx.shadowColor=c;ctx.shadowBlur=b;}
   function ng(){ctx.shadowBlur=0;ctx.shadowColor='transparent';}
+  function ga(a){ctx.globalAlpha=a;}
+  function ga1(){ctx.globalAlpha=1;}
 
-  /* ── helper: dark panel backdrop ── */
-  function panel(x,y,pw,ph){
-    ctx.save();
-    ctx.fillStyle='rgba(0,0,0,0.52)';
-    ctx.strokeStyle='rgba(0,229,255,0.13)';
-    ctx.lineWidth=1;
-    ctx.fillRect(x,y,pw,ph);
-    ctx.strokeRect(x,y,pw,ph);
-    ctx.restore();
-  }
-
-  /* ── CORNERS ── */
-  ctx.save();ctx.strokeStyle='rgba(0,229,255,0.4)';ctx.lineWidth=2;
-  [[20,20,1,1],[w-20,20,-1,1],[20,h-20,1,-1],[w-20,h-20,-1,-1]].forEach(function(c){
-    ctx.beginPath();ctx.moveTo(c[0],c[1]+c[3]*40);ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0]+c[2]*40,c[1]);ctx.stroke();
-  });ctx.restore();
+  /* CORNERS */
+  ctx.save(); ctx.strokeStyle=C; ga(0.4); ctx.lineWidth=2;
+  [[20,20,1,1],[w-20,20,-1,1],[20,h-20,1,-1],[w-20,h-20,-1,-1]].forEach(function(q){
+    ctx.beginPath();ctx.moveTo(q[0],q[1]+q[3]*40);ctx.lineTo(q[0],q[1]);ctx.lineTo(q[0]+q[2]*40,q[1]);ctx.stroke();
+  }); ga1(); ctx.restore();
 
   var n=new Date();
   var ts=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds());
 
-  /* ── TOP LEFT panel: clock + date + area ── */
-  var tlW=320, tlH=lastArea?82:66;
-  panel(14,14,tlW,tlH);
+  /* TOP LEFT */
   ctx.save();
-  glow(C,12);ctx.fillStyle=C;ctx.font='700 38px Orbitron,monospace';ctx.fillText(ts,24,52);ng();
-  ctx.fillStyle='rgba(0,229,255,0.75)';ctx.font='bold 12px "Share Tech Mono",monospace';
-  ctx.fillText(DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear(),24,68);
-  if(lastArea){
-    glow(C,8);ctx.fillStyle=C;ctx.font='700 13px "Share Tech Mono",monospace';
-    ctx.fillText(lastArea,24,84);ng();
-  }
+  glow(C,12); ctx.fillStyle=C; ctx.font='700 38px Orbitron,monospace'; ctx.fillText(ts,22,52); ng();
+  ctx.fillStyle=C; ga(0.7); ctx.font='bold 12px "Share Tech Mono",monospace';
+  ctx.fillText(DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear(),22,70); ga1();
+  var lineY=88;
+  if(lastArea){glow(C,8);ctx.fillStyle=C;ctx.font='700 13px "Share Tech Mono",monospace';ctx.fillText(lastArea,22,lineY);ng();lineY+=16;}
+  if(lastStreet){ctx.fillStyle=C;ga(0.7);ctx.font='bold 11px "Share Tech Mono",monospace';ctx.fillText(lastStreet,22,lineY);ga1();}
   ctx.restore();
 
-  /* ── TOP RIGHT panel: battery + wifi ── */
-  var bx=w-216, panW=202, panH=52;
-  panel(bx-6, 14, panW, panH);
+  /* TOP RIGHT */
   ctx.save();
-  var by=34;
+  var bx=w-212,by=34;
   function bar(lbl,pct,col){
-    ctx.fillStyle='rgba(0,229,255,0.7)';ctx.font='bold 11px "Share Tech Mono",monospace';ctx.fillText(lbl,bx,by);
-    ctx.fillStyle='rgba(0,229,255,0.08)';ctx.fillRect(bx+40,by-12,120,6);
-    ctx.strokeStyle='rgba(0,229,255,0.2)';ctx.lineWidth=1;ctx.strokeRect(bx+40,by-12,120,6);
-    ctx.fillStyle=col;ctx.fillRect(bx+40,by-12,120*clamp(pct,0,100)/100,6);
-    ctx.fillStyle='rgba(0,229,255,0.95)';ctx.font='bold 12px "Share Tech Mono",monospace';ctx.fillText(Math.round(pct)+'%',bx+168,by);
-    by+=22;
+    ga(0.65);ctx.fillStyle=C;ctx.font='bold 11px "Share Tech Mono",monospace';ctx.fillText(lbl,bx,by);ga1();
+    ctx.fillStyle='rgba(255,255,255,.04)';ctx.fillRect(bx+42,by-12,120,5);
+    ctx.strokeStyle=C;ga(0.2);ctx.lineWidth=1;ctx.strokeRect(bx+42,by-12,120,5);ga1();
+    ctx.fillStyle=col;ctx.fillRect(bx+42,by-12,120*clamp(pct,0,100)/100,5);
+    ctx.fillStyle=C;ctx.font='bold 12px "Share Tech Mono",monospace';ctx.fillText(Math.round(pct)+'%',bx+170,by);
+    by+=20;
   }
   bar('BAT',batPct,batPct>50?C3:batPct>20?C2:CR);
-  bar('WIFI',wifiPct,C);
+  var netLabel=document.getElementById('netV').textContent;
+  var netMap={'SLOW-2G':15,'2G':30,'3G':65,'4G':90,'ONLINE':75,'OFFLINE':0};
+  bar('NET',netMap[netLabel]||50,C);
+  // cpu + mem
+  var cpuTxt=document.getElementById('cpuV').textContent;
+  var memTxt=document.getElementById('memV').textContent;
+  ga(0.55);ctx.fillStyle=C;ctx.font='bold 10px "Share Tech Mono",monospace';
+  ctx.fillText('CPU',bx,by);ctx.fillText('MEM',bx,by+14);ga1();
+  ctx.fillStyle=C;ctx.font='bold 11px "Share Tech Mono",monospace';
+  ctx.fillText(cpuTxt,bx+42,by);ctx.fillText(memTxt,bx+42,by+14);
   ctx.restore();
 
-  /* ── BOTTOM LEFT panel: bearing bar + GPS coords ── */
-  var blX=14, blY=h-158, blW=260, blH=144;
-  panel(blX, blY, blW, blH);
+  /* BOTTOM LEFT — bearing bar + coords */
   ctx.save();
-
-  // --- BEARING BAR ---
-  var barX=blX+8, barY=blY+8, barW=blW-16, barH=36;
-  // clip region for the bar
-  ctx.save();
-  ctx.beginPath();ctx.rect(barX,barY,barW,barH);ctx.clip();
-
-  var hDeg=((compassHeading%360)+360)%360;
-  var TICK_PX=6; // px per degree
-  var centreX=barX+barW/2;
-
-  // draw ticks from heading-spread to heading+spread
-  var spread=Math.ceil(barW/2/TICK_PX)+5;
+  var blX=22,blY=h-144,barW=200,barH=32;
+  var hDeg=compassHeading,TPIX=10,bcx=blX+barW/2;
   var CARDS2={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
-  for(var dd2=-spread;dd2<=spread;dd2++){
-    var deg2=((Math.round(hDeg)+dd2)%360+360)%360;
-    var tx=centreX+dd2*TICK_PX;
-    var isMaj=deg2%45===0;
-    var isMed=deg2%15===0;
+
+  ctx.save();
+  ctx.beginPath();ctx.rect(blX,blY,barW,barH);ctx.clip();
+  var spread=Math.ceil(barW/2/TPIX)+5;
+  for(var off=-spread;off<=spread;off++){
+    var deg2=((Math.round(hDeg)+off)%360+360)%360;
+    var tx=bcx+off*TPIX;
+    var isMaj=deg2%45===0,isMed=deg2%15===0;
     if(!isMaj&&!isMed&&deg2%5!==0) continue;
-    var tickH=isMaj?16:isMed?10:6;
-    ctx.strokeStyle=isMaj?(deg2===0?'rgba(255,23,68,0.9)':'rgba(0,229,255,0.85)'):'rgba(0,229,255,0.35)';
-    ctx.lineWidth=isMaj?1.5:1;
-    ctx.beginPath();ctx.moveTo(tx,barY+barH-tickH);ctx.lineTo(tx,barY+barH);ctx.stroke();
+    var tH=isMaj?16:isMed?9:5;
+    ctx.beginPath();ctx.moveTo(tx,blY+barH-tH);ctx.lineTo(tx,blY+barH);
+    ctx.strokeStyle=C;ga(isMaj?0.9:isMed?0.5:0.22);ctx.lineWidth=isMaj?1.5:1;ctx.stroke();ga1();
     if(isMaj){
-      var card=CARDS2[deg2];
-      var lbl2=card||String(deg2);
-      ctx.font=card?'bold 10px Orbitron,monospace':'bold 8px "Share Tech Mono",monospace';
-      ctx.fillStyle=deg2===0?'rgba(255,23,68,0.95)':'rgba(0,229,255,0.9)';
-      if(deg2===0){glow('rgba(255,23,68,0.5)',4);}
-      ctx.fillText(lbl2,tx-ctx.measureText(lbl2).width/2,barY+barH-tickH-3);
-      ng();
+      var card2=CARDS2[deg2],lbl2=card2||String(deg2);
+      ctx.font=card2?'bold 9px Orbitron,monospace':'bold 8px "Share Tech Mono",monospace';
+      ctx.fillStyle=deg2===0?'#ff1744':C;ga(deg2===0?1:0.85);
+      ctx.fillText(lbl2,tx-ctx.measureText(lbl2).width/2,blY+barH-tH-2);ga1();
     }
   }
-  ctx.restore(); // end clip
-
-  // centre reticle line + pointer triangle
-  ctx.strokeStyle='rgba(0,229,255,0.7)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(centreX,barY);ctx.lineTo(centreX,barY+barH);ctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle=C;ga(0.6);ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(bcx,blY);ctx.lineTo(bcx,blY+barH);ctx.stroke();ga1();
   ctx.fillStyle=C;
-  ctx.beginPath();ctx.moveTo(centreX-5,barY);ctx.lineTo(centreX+5,barY);ctx.lineTo(centreX,barY+7);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(bcx-5,blY);ctx.lineTo(bcx+5,blY);ctx.lineTo(bcx,blY+7);ctx.closePath();ctx.fill();
 
-  // border around bar
-  ctx.strokeStyle='rgba(0,229,255,0.25)';ctx.lineWidth=1;
-  ctx.strokeRect(barX,barY,barW,barH);
+  // HDG label
+  var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var dir=dirs[Math.round(hDeg/22.5)%16];
+  glow(C,6);ctx.fillStyle=C;ctx.font='700 11px Orbitron,monospace';
+  ctx.fillText('HDG '+Math.round(hDeg).toString().padStart(3,'0')+'°  '+dir,blX,blY+barH+14);ng();
 
-  // HDG readout
-  var dirs2=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  var dir2=dirs2[Math.round(hDeg/22.5)%16];
-  var hdgStr='HDG '+Math.round(hDeg).toString().padStart(3,'0')+'°  '+dir2;
-  glow(C,8);ctx.fillStyle=C;ctx.font='700 12px Orbitron,monospace';
-  ctx.fillText(hdgStr,blX+8,blY+56);ng();
-
-  // GPS coords
-  var gy=blY+74;
-  ctx.fillStyle='rgba(0,229,255,0.55)';ctx.font='bold 11px "Share Tech Mono",monospace';
-  ctx.fillText('LAT',blX+8,gy);ctx.fillText('LON',blX+8,gy+17);
+  var cy2=blY+barH+30;
+  ga(0.5);ctx.fillStyle=C;ctx.font='bold 11px "Share Tech Mono",monospace';
+  ctx.fillText('LAT',blX,cy2);ctx.fillText('LON',blX,cy2+16);ga1();
   ctx.fillStyle=C;ctx.font='bold 13px "Share Tech Mono",monospace';
-  ctx.fillText(lat!=null?lat.toFixed(5)+'°':'ACQUIRING',blX+38,gy);
-  ctx.fillText(lon!=null?lon.toFixed(5)+'°':'ACQUIRING',blX+38,gy+17);
+  ctx.fillText(lat!=null?lat.toFixed(5)+'°':'ACQUIRING',blX+30,cy2);
+  ctx.fillText(lon!=null?lon.toFixed(5)+'°':'ACQUIRING',blX+30,cy2+16);
 
-  // Speed + G
-  ctx.fillStyle='rgba(0,229,255,0.55)';ctx.font='bold 11px "Share Tech Mono",monospace';
-  ctx.fillText('SPD',blX+8,gy+34);ctx.fillText('G',blX+8,gy+34+14);
-  ctx.fillStyle=C;ctx.font='bold 12px "Share Tech Mono",monospace';
-  ctx.fillText(currentSpeed.toFixed(1)+' km/h',blX+38,gy+34);
-  ctx.fillText(currentG.toFixed(2),blX+38,gy+48);
-
-  // GPS status
-  var gs=document.getElementById('gpsS');
-  var gc=gs?gs.className:'';
+  var gs=document.getElementById('gpsS'),gc=gs?gs.className:'';
   ctx.fillStyle=gc.indexOf('locked')>-1?C3:gc.indexOf('denied')>-1?CR:C2;
-  ctx.font='bold 11px "Share Tech Mono",monospace';
-  ctx.fillText(gs?gs.textContent:'● GPS ACQUIRING',blX+8,blY+blH-8);
+  ctx.font='bold 10px "Share Tech Mono",monospace';
+  ctx.fillText(gs?gs.textContent:'● GPS ACQUIRING',blX,cy2+32);
   ctx.restore();
 
-  /* ── BOTTOM RIGHT panel: weather ── */
+  /* POIs */
+  if(poiData.length){
+    ctx.save();
+    var py=h/2-(poiData.length*14)/2;
+    ga(0.4);ctx.fillStyle=C;ctx.font='bold 9px "Share Tech Mono",monospace';
+    ctx.fillText('NEARBY',22,py-10);ga1();
+    poiData.forEach(function(item){
+      ga(0.88);ctx.fillStyle=C;ctx.font='bold 10px "Share Tech Mono",monospace';
+      ctx.fillText(fmtDist(item.dist)+' '+b2arrow(item.bear)+' '+item.name,22,py);ga1();
+      py+=14;
+    });
+    ctx.restore();
+  }
+
+  /* BOTTOM RIGHT — weather */
+  ctx.save();
+  function rtext(str,y,col,font,alpha){
+    ctx.fillStyle=col||C; ga(alpha||1);
+    ctx.font=font||'bold 12px "Share Tech Mono",monospace';
+    ctx.fillText(str,w-ctx.measureText(str).width-22,y); ga1();
+  }
   var wt=document.getElementById('wTemp').textContent;
   var wc=document.getElementById('wCond').textContent;
   var ww=document.getElementById('wWind').textContent;
   var wh=document.getElementById('wHum').textContent;
   var ws=document.getElementById('wSun').textContent;
-  var aqiEl=document.getElementById('wAqi');
-  var polEl=document.getElementById('wPollen');
-  var hasEnv=(aqiEl&&aqiEl.textContent!=='--')||(polEl&&polEl.textContent!=='--');
-  var wrH=hasEnv?148:118;
-  var wrX=w-246, wrY=h-wrH-14;
-  panel(wrX,wrY,232,wrH);
-
-  ctx.save();
-  function rtext(str,y,col,font){
-    ctx.fillStyle=col||'rgba(0,229,255,0.65)';
-    ctx.font=font||'bold 12px "Share Tech Mono",monospace';
-    ctx.fillText(str,w-ctx.measureText(str).width-22,y);
-  }
   glow(C,10);ctx.fillStyle=C;ctx.font='700 34px Orbitron,monospace';
-  ctx.fillText(wt,w-ctx.measureText(wt).width-22,wrY+38);ng();
-  rtext(wc,      wrY+56,'rgba(0,229,255,.85)','bold 12px "Share Tech Mono",monospace');
-  rtext('WIND '+ww+' km/h', wrY+74);
-  rtext('HUM '+wh,          wrY+90);
-  rtext(ws,                 wrY+106,'rgba(0,229,255,.55)','bold 11px "Share Tech Mono",monospace');
+  ctx.fillText(wt,w-ctx.measureText(wt).width-22,h-108);ng();
+  rtext(wc,h-88,C,'bold 12px "Share Tech Mono",monospace',0.85);
+  rtext('WIND '+ww+' km/h',h-70,C,'bold 12px "Share Tech Mono",monospace',0.7);
+  rtext('HUM '+wh,h-54,C,'bold 12px "Share Tech Mono",monospace',0.7);
+  rtext(ws,h-40,C,'bold 11px "Share Tech Mono",monospace',0.5);
+  var ae2=document.getElementById('wAqi'),pe2=document.getElementById('wPollen');
+  var hasEnv=(ae2&&ae2.textContent!=='--')||(pe2&&pe2.textContent!=='--');
   if(hasEnv){
-    ctx.strokeStyle='rgba(0,229,255,0.18)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(wrX+8,wrY+114);ctx.lineTo(wrX+224,wrY+114);ctx.stroke();
-    if(aqiEl&&aqiEl.textContent!=='--'){
-      var al=document.getElementById('wAqiLbl').textContent;
-      var ac=aqiEl.style.color||C;
-      rtext('AQI '+aqiEl.textContent+' '+al, wrY+130, ac, 'bold 12px "Share Tech Mono",monospace');
-    }
-    if(polEl&&polEl.textContent!=='--'){
-      var pl=document.getElementById('wPollenLbl').textContent;
-      var pc=polEl.style.color||C;
-      var aqiShowing=aqiEl&&aqiEl.textContent!=='--';
-      rtext('POLLEN '+polEl.textContent+' '+pl, aqiShowing?wrY+146:wrY+130, pc,'bold 12px "Share Tech Mono",monospace');
+    ctx.strokeStyle=C;ga(0.15);ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(w-250,h-32);ctx.lineTo(w-22,h-32);ctx.stroke();ga1();
+    if(ae2&&ae2.textContent!=='--')
+      rtext('AQI '+ae2.textContent+' '+document.getElementById('wAqiLbl').textContent,h-18,ae2.style.color||C,'bold 12px "Share Tech Mono",monospace',1);
+    if(pe2&&pe2.textContent!=='--'){
+      var aqiOn=ae2&&ae2.textContent!=='--';
+      rtext('POLLEN '+pe2.textContent+' '+document.getElementById('wPollenLbl').textContent,aqiOn?h-32:h-18,pe2.style.color||C,'bold 12px "Share Tech Mono",monospace',1);
     }
   }
   ctx.restore();
 
-  /* ── ALERTS ── */
+  /* ALERTS */
   if(alertsState.length){
     ctx.save();
     var ay=20;
     alertsState.slice(0,3).forEach(function(a){
       var col=a.type==='ok'?C3:a.type==='warn'?C2:a.type==='danger'?CR:C;
       var aw=300,ax=w/2-aw/2;
-      ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(ax,ay,aw,20);
       ctx.strokeStyle=col;ctx.lineWidth=1;ctx.strokeRect(ax,ay,aw,20);
       ctx.fillStyle=col;ctx.font='bold 11px Orbitron,monospace';ctx.fillText(a.msg,ax+8,ay+14);
       ay+=26;
@@ -776,9 +679,9 @@ function drawHud2D(){
   }
 }
 
-/* WebGL */
-function cSh(gl,t,s){var sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);return sh;}
-function cPr(gl,vs,fs){var v=cSh(gl,gl.VERTEX_SHADER,vs),f=cSh(gl,gl.FRAGMENT_SHADER,fs),p=gl.createProgram();gl.attachShader(p,v);gl.attachShader(p,f);gl.linkProgram(p);return p;}
+/* ── WebGL ── */
+function cSh(g,t,s){var sh=g.createShader(t);g.shaderSource(sh,s);g.compileShader(sh);return sh;}
+function cPr(g,vs,fs){var v=cSh(g,g.VERTEX_SHADER,vs),f=cSh(g,g.FRAGMENT_SHADER,fs),pr=g.createProgram();g.attachShader(pr,v);g.attachShader(pr,f);g.linkProgram(pr);return pr;}
 function m4i(){var m=new Float32Array(16);m[0]=1;m[5]=1;m[10]=1;m[15]=1;return m;}
 function m4mul(a,b){var o=new Float32Array(16);for(var i=0;i<4;i++)for(var j=0;j<4;j++){var s=0;for(var k=0;k<4;k++)s+=a[j+k*4]*b[i*4+k];o[i*4+j]=s;}return o;}
 function m4t(x,y,z){var m=m4i();m[12]=x;m[13]=y;m[14]=z;return m;}
@@ -840,7 +743,8 @@ async function enterXR(){
     if(!await navigator.xr.isSessionSupported('immersive-ar')){addAlert('AR NOT SUPPORTED','warn');return;}
     xrSession=await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['local'],optionalFeatures:['local-floor']});
     btn.textContent='◈ EXIT AR';
-    document.querySelectorAll('.tl,.tr,.bl,.br,.corner,.alerts').forEach(function(e){e.style.display='none';});
+    document.getElementById('themePicker').style.display='none';
+    document.querySelectorAll('.tl,.tr,.bl,.br,.corner,.alerts,#poiPanel').forEach(function(e){e.style.display='none';});
     document.body.style.background='transparent';
     gl=document.createElement('canvas').getContext('webgl',{xrCompatible:true,alpha:true,antialias:true,premultipliedAlpha:true});
     xrLayer=new XRWebGLLayer(xrSession,gl,{alpha:true});
@@ -850,7 +754,8 @@ async function enterXR(){
     initXRGL();
     xrSession.addEventListener('end',function(){
       xrSession=null;xrRefSpace=null;xrLayer=null;
-      document.querySelectorAll('.tl,.tr,.bl,.br,.corner,.alerts').forEach(function(e){e.style.display='';});
+      document.getElementById('themePicker').style.display='flex';
+      document.querySelectorAll('.tl,.tr,.bl,.br,.corner,.alerts,#poiPanel').forEach(function(e){e.style.display='';});
       btn.textContent='◈ ENTER AR MODE';
     });
     xrSession.requestAnimationFrame(xrFrame);
