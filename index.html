@@ -588,6 +588,18 @@ function drawHud2D(){
   function glow(c,b){ctx.shadowColor=c;ctx.shadowBlur=b;}
   function ng(){ctx.shadowBlur=0;ctx.shadowColor='transparent';}
 
+  /* ── helper: dark panel backdrop ── */
+  function panel(x,y,pw,ph){
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.52)';
+    ctx.strokeStyle='rgba(0,229,255,0.13)';
+    ctx.lineWidth=1;
+    ctx.fillRect(x,y,pw,ph);
+    ctx.strokeRect(x,y,pw,ph);
+    ctx.restore();
+  }
+
+  /* ── CORNERS ── */
   ctx.save();ctx.strokeStyle='rgba(0,229,255,0.4)';ctx.lineWidth=2;
   [[20,20,1,1],[w-20,20,-1,1],[20,h-20,1,-1],[w-20,h-20,-1,-1]].forEach(function(c){
     ctx.beginPath();ctx.moveTo(c[0],c[1]+c[3]*40);ctx.lineTo(c[0],c[1]);ctx.lineTo(c[0]+c[2]*40,c[1]);ctx.stroke();
@@ -596,18 +608,24 @@ function drawHud2D(){
   var n=new Date();
   var ts=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds());
 
+  /* ── TOP LEFT panel: clock + date + area ── */
+  var tlW=320, tlH=lastArea?82:66;
+  panel(14,14,tlW,tlH);
   ctx.save();
-  glow(C,12);ctx.fillStyle=C;ctx.font='700 38px Orbitron,monospace';ctx.fillText(ts,22,52);ng();
+  glow(C,12);ctx.fillStyle=C;ctx.font='700 38px Orbitron,monospace';ctx.fillText(ts,24,52);ng();
   ctx.fillStyle='rgba(0,229,255,0.75)';ctx.font='bold 12px "Share Tech Mono",monospace';
-  ctx.fillText(DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear(),22,70);
+  ctx.fillText(DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear(),24,68);
   if(lastArea){
-    glow(C,8);ctx.fillStyle=C;ctx.font='700 14px "Share Tech Mono",monospace';
-    ctx.fillText(lastArea,22,90);ng();
+    glow(C,8);ctx.fillStyle=C;ctx.font='700 13px "Share Tech Mono",monospace';
+    ctx.fillText(lastArea,24,84);ng();
   }
   ctx.restore();
 
+  /* ── TOP RIGHT panel: battery + wifi ── */
+  var bx=w-216, panW=202, panH=52;
+  panel(bx-6, 14, panW, panH);
   ctx.save();
-  var bx=w-210,by=34;
+  var by=34;
   function bar(lbl,pct,col){
     ctx.fillStyle='rgba(0,229,255,0.7)';ctx.font='bold 11px "Share Tech Mono",monospace';ctx.fillText(lbl,bx,by);
     ctx.fillStyle='rgba(0,229,255,0.08)';ctx.fillRect(bx+40,by-12,120,6);
@@ -620,69 +638,142 @@ function drawHud2D(){
   bar('WIFI',wifiPct,C);
   ctx.restore();
 
+  /* ── BOTTOM LEFT panel: bearing bar + GPS coords ── */
+  var blX=14, blY=h-158, blW=260, blH=144;
+  panel(blX, blY, blW, blH);
   ctx.save();
+
+  // --- BEARING BAR ---
+  var barX=blX+8, barY=blY+8, barW=blW-16, barH=36;
+  // clip region for the bar
+  ctx.save();
+  ctx.beginPath();ctx.rect(barX,barY,barW,barH);ctx.clip();
+
+  var hDeg=((compassHeading%360)+360)%360;
+  var TICK_PX=6; // px per degree
+  var centreX=barX+barW/2;
+
+  // draw ticks from heading-spread to heading+spread
+  var spread=Math.ceil(barW/2/TICK_PX)+5;
+  var CARDS2={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+  for(var dd2=-spread;dd2<=spread;dd2++){
+    var deg2=((Math.round(hDeg)+dd2)%360+360)%360;
+    var tx=centreX+dd2*TICK_PX;
+    var isMaj=deg2%45===0;
+    var isMed=deg2%15===0;
+    if(!isMaj&&!isMed&&deg2%5!==0) continue;
+    var tickH=isMaj?16:isMed?10:6;
+    ctx.strokeStyle=isMaj?(deg2===0?'rgba(255,23,68,0.9)':'rgba(0,229,255,0.85)'):'rgba(0,229,255,0.35)';
+    ctx.lineWidth=isMaj?1.5:1;
+    ctx.beginPath();ctx.moveTo(tx,barY+barH-tickH);ctx.lineTo(tx,barY+barH);ctx.stroke();
+    if(isMaj){
+      var card=CARDS2[deg2];
+      var lbl2=card||String(deg2);
+      ctx.font=card?'bold 10px Orbitron,monospace':'bold 8px "Share Tech Mono",monospace';
+      ctx.fillStyle=deg2===0?'rgba(255,23,68,0.95)':'rgba(0,229,255,0.9)';
+      if(deg2===0){glow('rgba(255,23,68,0.5)',4);}
+      ctx.fillText(lbl2,tx-ctx.measureText(lbl2).width/2,barY+barH-tickH-3);
+      ng();
+    }
+  }
+  ctx.restore(); // end clip
+
+  // centre reticle line + pointer triangle
+  ctx.strokeStyle='rgba(0,229,255,0.7)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(centreX,barY);ctx.lineTo(centreX,barY+barH);ctx.stroke();
+  ctx.fillStyle=C;
+  ctx.beginPath();ctx.moveTo(centreX-5,barY);ctx.lineTo(centreX+5,barY);ctx.lineTo(centreX,barY+7);ctx.closePath();ctx.fill();
+
+  // border around bar
+  ctx.strokeStyle='rgba(0,229,255,0.25)';ctx.lineWidth=1;
+  ctx.strokeRect(barX,barY,barW,barH);
+
+  // HDG readout
+  var dirs2=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var dir2=dirs2[Math.round(hDeg/22.5)%16];
+  var hdgStr='HDG '+Math.round(hDeg).toString().padStart(3,'0')+'°  '+dir2;
+  glow(C,8);ctx.fillStyle=C;ctx.font='700 12px Orbitron,monospace';
+  ctx.fillText(hdgStr,blX+8,blY+56);ng();
+
+  // GPS coords
+  var gy=blY+74;
   ctx.fillStyle='rgba(0,229,255,0.55)';ctx.font='bold 11px "Share Tech Mono",monospace';
-  ctx.fillText('LAT',22,h-46);ctx.fillText('LON',22,h-29);
+  ctx.fillText('LAT',blX+8,gy);ctx.fillText('LON',blX+8,gy+17);
   ctx.fillStyle=C;ctx.font='bold 13px "Share Tech Mono",monospace';
-  ctx.fillText(lat!=null?lat.toFixed(5)+'°':'ACQUIRING',46,h-46);
-  ctx.fillText(lon!=null?lon.toFixed(5)+'°':'ACQUIRING',46,h-29);
+  ctx.fillText(lat!=null?lat.toFixed(5)+'°':'ACQUIRING',blX+38,gy);
+  ctx.fillText(lon!=null?lon.toFixed(5)+'°':'ACQUIRING',blX+38,gy+17);
+
+  // Speed + G
+  ctx.fillStyle='rgba(0,229,255,0.55)';ctx.font='bold 11px "Share Tech Mono",monospace';
+  ctx.fillText('SPD',blX+8,gy+34);ctx.fillText('G',blX+8,gy+34+14);
+  ctx.fillStyle=C;ctx.font='bold 12px "Share Tech Mono",monospace';
+  ctx.fillText(currentSpeed.toFixed(1)+' km/h',blX+38,gy+34);
+  ctx.fillText(currentG.toFixed(2),blX+38,gy+48);
+
+  // GPS status
   var gs=document.getElementById('gpsS');
   var gc=gs?gs.className:'';
   ctx.fillStyle=gc.indexOf('locked')>-1?C3:gc.indexOf('denied')>-1?CR:C2;
   ctx.font='bold 11px "Share Tech Mono",monospace';
-  ctx.fillText(gs?gs.textContent:'● GPS ACQUIRING',22,h-12);
+  ctx.fillText(gs?gs.textContent:'● GPS ACQUIRING',blX+8,blY+blH-8);
   ctx.restore();
 
-  ctx.save();
+  /* ── BOTTOM RIGHT panel: weather ── */
   var wt=document.getElementById('wTemp').textContent;
   var wc=document.getElementById('wCond').textContent;
   var ww=document.getElementById('wWind').textContent;
   var wh=document.getElementById('wHum').textContent;
   var ws=document.getElementById('wSun').textContent;
+  var aqiEl=document.getElementById('wAqi');
+  var polEl=document.getElementById('wPollen');
+  var hasEnv=(aqiEl&&aqiEl.textContent!=='--')||(polEl&&polEl.textContent!=='--');
+  var wrH=hasEnv?148:118;
+  var wrX=w-246, wrY=h-wrH-14;
+  panel(wrX,wrY,232,wrH);
 
+  ctx.save();
   function rtext(str,y,col,font){
     ctx.fillStyle=col||'rgba(0,229,255,0.65)';
     ctx.font=font||'bold 12px "Share Tech Mono",monospace';
     ctx.fillText(str,w-ctx.measureText(str).width-22,y);
   }
-
   glow(C,10);ctx.fillStyle=C;ctx.font='700 34px Orbitron,monospace';
-  ctx.fillText(wt,w-ctx.measureText(wt).width-22,h-104);ng();
-  rtext(wc,      h-84,'rgba(0,229,255,.8)','bold 12px "Share Tech Mono",monospace');
-  rtext('WIND '+ww+' km/h', h-66);
-  rtext('HUM '+wh,          h-50);
-  rtext(ws,                 h-36,'rgba(0,229,255,.55)','bold 11px "Share Tech Mono",monospace');
-
-  var aqiEl=document.getElementById('wAqi');
-  var polEl=document.getElementById('wPollen');
-  var hasEnv=(aqiEl&&aqiEl.textContent!=='--')||(polEl&&polEl.textContent!=='--');
+  ctx.fillText(wt,w-ctx.measureText(wt).width-22,wrY+38);ng();
+  rtext(wc,      wrY+56,'rgba(0,229,255,.85)','bold 12px "Share Tech Mono",monospace');
+  rtext('WIND '+ww+' km/h', wrY+74);
+  rtext('HUM '+wh,          wrY+90);
+  rtext(ws,                 wrY+106,'rgba(0,229,255,.55)','bold 11px "Share Tech Mono",monospace');
   if(hasEnv){
-    ctx.strokeStyle='rgba(0,229,255,0.15)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(w-210,h-26);ctx.lineTo(w-22,h-26);ctx.stroke();
+    ctx.strokeStyle='rgba(0,229,255,0.18)';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(wrX+8,wrY+114);ctx.lineTo(wrX+224,wrY+114);ctx.stroke();
+    if(aqiEl&&aqiEl.textContent!=='--'){
+      var al=document.getElementById('wAqiLbl').textContent;
+      var ac=aqiEl.style.color||C;
+      rtext('AQI '+aqiEl.textContent+' '+al, wrY+130, ac, 'bold 12px "Share Tech Mono",monospace');
+    }
+    if(polEl&&polEl.textContent!=='--'){
+      var pl=document.getElementById('wPollenLbl').textContent;
+      var pc=polEl.style.color||C;
+      var aqiShowing=aqiEl&&aqiEl.textContent!=='--';
+      rtext('POLLEN '+polEl.textContent+' '+pl, aqiShowing?wrY+146:wrY+130, pc,'bold 12px "Share Tech Mono",monospace');
+    }
   }
-  if(aqiEl&&aqiEl.textContent!=='--'){
-    var al=document.getElementById('wAqiLbl').textContent;
-    var ac=aqiEl.style.color||C;
-    rtext('AQI '+aqiEl.textContent+' '+al, h-14, ac, 'bold 12px "Share Tech Mono",monospace');
-  }
-  if(polEl&&polEl.textContent!=='--'){
-    var pl=document.getElementById('wPollenLbl').textContent;
-    var pc=polEl.style.color||C;
-    var aqiShowing=aqiEl&&aqiEl.textContent!=='--';
-    rtext('POLLEN '+polEl.textContent+' '+pl, aqiShowing?h-28:h-14, pc,'bold 12px "Share Tech Mono",monospace');
-  }
+  ctx.restore();
 
+  /* ── ALERTS ── */
   if(alertsState.length){
+    ctx.save();
     var ay=20;
     alertsState.slice(0,3).forEach(function(a){
       var col=a.type==='ok'?C3:a.type==='warn'?C2:a.type==='danger'?CR:C;
-      var aw=280,ax=w/2-aw/2;
-      ctx.strokeStyle=col;ctx.lineWidth=1;ctx.strokeRect(ax,ay,aw,18);
-      ctx.fillStyle=col;ctx.font='bold 11px Orbitron,monospace';ctx.fillText(a.msg,ax+8,ay+13);
-      ay+=24;
+      var aw=300,ax=w/2-aw/2;
+      ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(ax,ay,aw,20);
+      ctx.strokeStyle=col;ctx.lineWidth=1;ctx.strokeRect(ax,ay,aw,20);
+      ctx.fillStyle=col;ctx.font='bold 11px Orbitron,monospace';ctx.fillText(a.msg,ax+8,ay+14);
+      ay+=26;
     });
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 /* WebGL */
