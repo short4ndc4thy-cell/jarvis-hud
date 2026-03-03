@@ -3,88 +3,88 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>XR HUD (Head-Locked, WebGL, No DOM Overlay)</title>
+<title>XR HUD (Head-Locked, WebGL, Reliable)</title>
 <style>
-  html, body { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+  html, body { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
   #ui {
     position: fixed; inset: 0;
     display: flex; flex-direction: column; justify-content: center; align-items: center;
-    gap: 14px;
-    color: #e8f7ff;
+    gap: 12px;
+    color: rgba(0,229,255,.92);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     text-align: center;
     padding: 20px;
+    background: radial-gradient(ellipse at center, rgba(0,229,255,.05), rgba(0,0,0,.65));
   }
-  #ui h1 { margin:0; font-size: 18px; font-weight: 700; letter-spacing: .06em; opacity:.95; }
-  #ui p { margin:0; max-width: 900px; font-size: 13px; line-height: 1.4; opacity:.8; }
+  #ui h1 { margin:0; font-size: 16px; letter-spacing: .14em; }
+  #ui p { margin:0; max-width: 980px; font-size: 12px; line-height: 1.35; opacity:.9; }
   #btns { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
   button {
     appearance: none;
-    background: transparent;
-    border: 1px solid rgba(0,229,255,.75);
+    background: rgba(0,0,0,.35);
+    border: 1px solid rgba(0,229,255,.65);
     color: rgba(0,229,255,.95);
     padding: 10px 14px;
-    border-radius: 10px;
-    font-weight: 700;
-    letter-spacing: .08em;
+    border-radius: 12px;
+    font-weight: 800;
+    letter-spacing: .12em;
     cursor: pointer;
   }
-  button:hover { background: rgba(0,229,255,.12); }
+  button:hover { background: rgba(0,229,255,.10); }
   button:disabled { opacity:.35; cursor: not-allowed; }
+
   #log {
     width: min(980px, 92vw);
-    height: 180px;
+    height: 210px;
     border: 1px solid rgba(0,229,255,.25);
     border-radius: 12px;
-    background: rgba(0,0,0,.35);
+    background: rgba(0,0,0,.40);
     padding: 10px;
     overflow:auto;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
     line-height: 1.35;
     white-space: pre-wrap;
-    color: rgba(0,229,255,.85);
   }
 
-  /* This canvas is NOT the HUD you see in XR. It is only for debugging / mirror view. */
   #mirror {
     position: fixed;
     right: 10px; bottom: 10px;
-    width: 220px; height: 140px;
-    border: 1px solid rgba(255,255,255,.15);
-    border-radius: 10px;
-    opacity: .85;
+    width: 260px; height: 130px;
+    border: 1px solid rgba(0,229,255,.22);
+    border-radius: 12px;
+    background: rgba(0,0,0,.35);
     display:none;
+    z-index: 9999;
   }
 
-  /* Hidden HUD source canvas (we use it as texture). */
   #hud2d { display:none; }
 </style>
 </head>
 <body>
 
 <div id="ui">
-  <h1>XR HUD — WebGL Head-Locked Quad (No DOM Overlay)</h1>
+  <h1>XR HUD · HEAD-LOCKED · WEBGL</h1>
   <p>
-    This renders a HUD inside the XR scene as a transparent textured quad locked to your head.
-    If your device/browser supports <b>WebXR immersive-ar passthrough</b>, you’ll get real AR with a real HUD.
-    If not, you’ll get a clear error instead of a fake camera-window hack.
+    This draws the HUD <b>inside</b> XR as a transparent textured quad that is <b>locked to your head</b>.
+    If your runtime provides passthrough, you’ll see passthrough with a HUD.
+    If you see passthrough only, it’s not “offscreen” anymore, it’s a rendering/runtime issue (logged below).
   </p>
   <div id="btns">
     <button id="enter">ENTER AR</button>
     <button id="exit" disabled>EXIT</button>
-    <button id="perm">REQUEST MOTION PERMISSION</button>
-    <button id="toggleMirror">TOGGLE MIRROR</button>
+    <button id="perm">MOTION PERMISSION</button>
+    <button id="toggleMirror">TOGGLE HUD MIRROR</button>
   </div>
   <div id="log"></div>
 </div>
 
-<canvas id="mirror"></canvas>
+<canvas id="mirror" width="260" height="130"></canvas>
 <canvas id="hud2d" width="1024" height="512"></canvas>
 
 <script>
-/* ============================================================
-   Logging
-============================================================ */
+/* =========================
+   LOGGING
+========================= */
 const logEl = document.getElementById('log');
 function log(msg) {
   const t = new Date().toISOString().slice(11, 19);
@@ -92,241 +92,110 @@ function log(msg) {
   logEl.scrollTop = logEl.scrollHeight;
 }
 function warn(msg){ log(`WARN: ${msg}`); }
-function err(msg){ log(`ERROR: ${msg}`); }
+function die(msg){ log(`ERROR: ${msg}`); }
 
-/* ============================================================
-   Basic State
-============================================================ */
+/* =========================
+   UI
+========================= */
 const enterBtn = document.getElementById('enter');
 const exitBtn  = document.getElementById('exit');
 const permBtn  = document.getElementById('perm');
 const mirrorBtn = document.getElementById('toggleMirror');
 const mirrorCanvas = document.getElementById('mirror');
+const mirrorCtx = mirrorCanvas.getContext('2d');
+
 const hudCanvas = document.getElementById('hud2d');
 const hudCtx = hudCanvas.getContext('2d', { alpha: true });
 
+let mirrorOn = false;
+
+/* =========================
+   STATE
+========================= */
 let xrSession = null;
 let xrRefSpace = null;
+
 let gl = null;
 let xrLayer = null;
 
 let program = null;
-let vao = null;
 let vbo = null;
 let ibo = null;
 let tex = null;
 
 let lastHudUpload = 0;
-let mirrorOn = false;
 
-// HUD data sources
+// HUD inputs
 let hasOrientation = false;
-let headingDeg = 0; // 0..360
+let headingDeg = 0;
 let rollDeg = 0;
 let pitchDeg = 0;
 let lat = null, lon = null;
 let speedMS = 0;
 
-let hudMode = 'AR'; // just label
-let threat = 5;
-let personCount = 0; // placeholder if you later integrate detection
-
-/* ============================================================
-   Helpers: HTTPS + WebXR checks
-============================================================ */
-function isSecure() {
+/* =========================
+   SECURITY + XR CHECKS
+========================= */
+function isSecureContextEnough() {
   return location.protocol === 'https:' || location.hostname === 'localhost';
 }
-async function checkWebXR() {
-  if (!navigator.xr) return { ok:false, reason:'navigator.xr is missing' };
-  let arOk = false;
-  try { arOk = await navigator.xr.isSessionSupported('immersive-ar'); }
-  catch(e){ return { ok:false, reason:`isSessionSupported threw: ${e.message}` }; }
-  if (!arOk) return { ok:false, reason:'immersive-ar not supported on this browser/device' };
-  return { ok:true, reason:'immersive-ar supported' };
+async function xrSupport() {
+  if (!navigator.xr) return { ok:false, why:'navigator.xr missing' };
+  try {
+    const ok = await navigator.xr.isSessionSupported('immersive-ar');
+    return ok ? { ok:true, why:'immersive-ar supported' } : { ok:false, why:'immersive-ar NOT supported' };
+  } catch (e) {
+    return { ok:false, why:`isSessionSupported failed: ${e.message}` };
+  }
 }
 
-/* ============================================================
-   Device Orientation + Geolocation (optional HUD inputs)
-============================================================ */
+/* =========================
+   OPTIONAL SENSORS
+========================= */
 function onOrient(e) {
   hasOrientation = true;
-  // iOS gives webkitCompassHeading sometimes; otherwise alpha is 0..360 with North?
-  // Many devices: alpha is compass-ish but depends.
-  const h = (e.webkitCompassHeading != null) ? e.webkitCompassHeading : (e.alpha != null ? (360 - e.alpha) : null);
+  const h = (e.webkitCompassHeading != null)
+    ? e.webkitCompassHeading
+    : (e.alpha != null ? (360 - e.alpha) : null);
   if (h != null && Number.isFinite(h)) headingDeg = ((h % 360) + 360) % 360;
   if (e.beta != null) pitchDeg = e.beta;
   if (e.gamma != null) rollDeg = e.gamma;
 }
-async function requestMotionPermissionIfNeeded() {
+async function requestMotionPermission() {
   try {
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       const p = await DeviceOrientationEvent.requestPermission();
-      if (p !== 'granted') {
-        warn('Motion permission not granted.');
-        return;
-      }
+      if (p !== 'granted') { warn('Motion permission denied.'); return; }
     }
     window.addEventListener('deviceorientation', onOrient, true);
-    log('Device orientation listener active.');
+    log('Motion listener active.');
   } catch(e) {
-    warn(`Motion permission request failed: ${e.message}`);
+    warn(`Motion permission error: ${e.message}`);
   }
 }
-
 function startGeo() {
-  if (!navigator.geolocation) { warn('Geolocation not available.'); return; }
+  if (!navigator.geolocation) { warn('Geolocation unavailable.'); return; }
   navigator.geolocation.watchPosition(
     (pos) => {
       lat = pos.coords.latitude;
       lon = pos.coords.longitude;
       speedMS = pos.coords.speed || 0;
     },
-    () => {
-      warn('Geolocation denied or failed.');
-      // Leave nulls
-    },
+    () => warn('Geolocation denied/failed.'),
     { enableHighAccuracy:true, maximumAge:2000 }
   );
 }
 
-/* ============================================================
-   2D HUD drawing (source texture)
-============================================================ */
-function clamp(n,min,max){ return Math.max(min, Math.min(max,n)); }
+/* =========================
+   2D HUD DRAWING
+========================= */
+function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
 function pad3(n){ return String(Math.round(n)).padStart(3,'0'); }
 function dirFromHeading(h) {
-  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  return dirs[Math.round(h/22.5) % 16];
+  const d = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return d[Math.round(h/22.5) % 16];
 }
-function drawHud2D(nowMs) {
-  const w = hudCanvas.width, h = hudCanvas.height;
-
-  // Clear transparent
-  hudCtx.clearRect(0, 0, w, h);
-
-  // HUD styling
-  // Background vignette-ish transparent panel
-  hudCtx.save();
-  hudCtx.globalAlpha = 0.85;
-  const grd = hudCtx.createLinearGradient(0,0,w,0);
-  grd.addColorStop(0, 'rgba(0,229,255,0.10)');
-  grd.addColorStop(0.5,'rgba(0,0,0,0.00)');
-  grd.addColorStop(1, 'rgba(0,229,255,0.10)');
-  hudCtx.fillStyle = grd;
-  roundRect(hudCtx, 18, 18, w-36, h-36, 22);
-  hudCtx.fill();
-  hudCtx.restore();
-
-  // Frame
-  hudCtx.save();
-  hudCtx.strokeStyle = 'rgba(0,229,255,0.55)';
-  hudCtx.lineWidth = 2;
-  roundRect(hudCtx, 18, 18, w-36, h-36, 22);
-  hudCtx.stroke();
-  hudCtx.restore();
-
-  // Corners
-  hudCtx.save();
-  hudCtx.strokeStyle = 'rgba(0,229,255,0.85)';
-  hudCtx.lineWidth = 3;
-  corner(hudCtx, 18, 18, 34, 'tl');
-  corner(hudCtx, w-18, 18, 34, 'tr');
-  corner(hudCtx, 18, h-18, 34, 'bl');
-  corner(hudCtx, w-18, h-18, 34, 'br');
-  hudCtx.restore();
-
-  // Text styles
-  hudCtx.save();
-  hudCtx.fillStyle = 'rgba(0,229,255,0.95)';
-  hudCtx.shadowColor = 'rgba(0,229,255,0.55)';
-  hudCtx.shadowBlur = 10;
-
-  // Title
-  hudCtx.font = '700 34px ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText('JARVIS HUD', 52, 74);
-
-  // Clock
-  const d = new Date();
-  const timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
-  hudCtx.font = '700 44px ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText(timeStr, 52, 132);
-
-  // Compass
-  const hdg = headingDeg;
-  const dir = dirFromHeading(hdg);
-  hudCtx.font = '800 56px ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText(`${dir} ${pad3(hdg)}°`, 52, 206);
-
-  // Horizon indicator
-  hudCtx.shadowBlur = 0;
-  hudCtx.strokeStyle = 'rgba(0,229,255,0.55)';
-  hudCtx.lineWidth = 2;
-  const cx = w*0.62, cy = h*0.50;
-  hudCtx.beginPath();
-  hudCtx.moveTo(cx-120, cy);
-  hudCtx.lineTo(cx+120, cy);
-  hudCtx.stroke();
-
-  // Crosshair
-  hudCtx.strokeStyle = 'rgba(0,229,255,0.75)';
-  hudCtx.beginPath();
-  hudCtx.moveTo(w/2 - 16, h/2);
-  hudCtx.lineTo(w/2 + 16, h/2);
-  hudCtx.moveTo(w/2, h/2 - 16);
-  hudCtx.lineTo(w/2, h/2 + 16);
-  hudCtx.stroke();
-
-  // Stats right side
-  const kmh = (speedMS * 3.6);
-  const speedStr = Number.isFinite(kmh) ? `${kmh.toFixed(1)} km/h` : `-- km/h`;
-  hudCtx.fillStyle = 'rgba(118,255,3,0.95)';
-  hudCtx.shadowColor = 'rgba(118,255,3,0.6)';
-  hudCtx.shadowBlur = 10;
-  hudCtx.font = '800 40px ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText(speedStr, w-380, 90);
-
-  // Coords
-  hudCtx.shadowBlur = 0;
-  hudCtx.fillStyle = 'rgba(0,229,255,0.9)';
-  hudCtx.font = '700 20px ui-monospace, Menlo, Consolas, monospace';
-  const latStr = (lat != null) ? lat.toFixed(6) : '--.------';
-  const lonStr = (lon != null) ? lon.toFixed(6) : '--.------';
-  hudCtx.fillText(`LAT ${latStr}`, w-380, 130);
-  hudCtx.fillText(`LON ${lonStr}`, w-380, 156);
-
-  // Threat bar
-  threat = clamp(5 + personCount*15 + (kmh > 20 ? 10 : 0), 0, 100);
-  hudCtx.fillStyle = 'rgba(0,229,255,0.25)';
-  hudCtx.fillRect(w-380, 186, 320, 14);
-  hudCtx.fillStyle = threat < 20 ? 'rgba(118,255,3,0.9)' : threat < 50 ? 'rgba(0,229,255,0.9)' : threat < 75 ? 'rgba(255,109,0,0.9)' : 'rgba(255,23,68,0.9)';
-  hudCtx.fillRect(w-380, 186, 320*(threat/100), 14);
-  hudCtx.fillStyle = 'rgba(0,229,255,0.9)';
-  hudCtx.fillText(`THREAT ${Math.round(threat)}%`, w-380, 226);
-
-  // Mode + notes
-  hudCtx.fillStyle = 'rgba(0,229,255,0.75)';
-  hudCtx.font = '600 18px ui-monospace, Menlo, Consolas, monospace';
-  hudCtx.fillText(`MODE: ${hudMode}`, 52, h-56);
-
-  // If orientation missing, show hint
-  if (!hasOrientation) {
-    hudCtx.fillStyle = 'rgba(255,109,0,0.95)';
-    hudCtx.font = '700 18px ui-monospace, Menlo, Consolas, monospace';
-    hudCtx.fillText('MOTION: NOT GRANTED (tap REQUEST MOTION PERMISSION)', 52, h-26);
-  }
-
-  // Scanlines (subtle)
-  hudCtx.save();
-  hudCtx.globalAlpha = 0.08;
-  hudCtx.fillStyle = '#00e5ff';
-  for (let y=0; y<h; y+=4) hudCtx.fillRect(18, y, w-36, 1);
-  hudCtx.restore();
-
-  hudCtx.restore();
-}
-
 function roundRect(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w/2, h/2);
   ctx.beginPath();
@@ -345,11 +214,173 @@ function corner(ctx, x, y, s, which) {
   if (which === 'br') { ctx.moveTo(x, y-s); ctx.lineTo(x, y); ctx.lineTo(x-s, y); }
   ctx.stroke();
 }
+function drawHud2D(nowMs) {
+  const w = hudCanvas.width, h = hudCanvas.height;
+  hudCtx.clearRect(0,0,w,h);
 
-/* ============================================================
-   WebGL: Minimal textured quad (transparent) in XR
-============================================================ */
-function createShader(gl, type, src) {
+  // Panel background
+  hudCtx.save();
+  hudCtx.globalAlpha = 0.88;
+  const g = hudCtx.createLinearGradient(0,0,w,0);
+  g.addColorStop(0, 'rgba(0,229,255,0.12)');
+  g.addColorStop(0.5,'rgba(0,0,0,0.02)');
+  g.addColorStop(1, 'rgba(0,229,255,0.12)');
+  hudCtx.fillStyle = g;
+  roundRect(hudCtx, 18, 18, w-36, h-36, 22);
+  hudCtx.fill();
+  hudCtx.restore();
+
+  // Frame + corners
+  hudCtx.save();
+  hudCtx.strokeStyle = 'rgba(0,229,255,0.70)';
+  hudCtx.lineWidth = 2.5;
+  roundRect(hudCtx, 18, 18, w-36, h-36, 22);
+  hudCtx.stroke();
+  hudCtx.lineWidth = 3;
+  corner(hudCtx, 18, 18, 34, 'tl');
+  corner(hudCtx, w-18, 18, 34, 'tr');
+  corner(hudCtx, 18, h-18, 34, 'bl');
+  corner(hudCtx, w-18, h-18, 34, 'br');
+  hudCtx.restore();
+
+  // Text glow
+  hudCtx.save();
+  hudCtx.fillStyle = 'rgba(0,229,255,0.95)';
+  hudCtx.shadowColor = 'rgba(0,229,255,0.55)';
+  hudCtx.shadowBlur = 12;
+
+  const d = new Date();
+  const timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+
+  hudCtx.font = '900 34px ui-monospace, Menlo, Consolas, monospace';
+  hudCtx.fillText('JARVIS HUD', 52, 74);
+
+  hudCtx.font = '900 48px ui-monospace, Menlo, Consolas, monospace';
+  hudCtx.fillText(timeStr, 52, 132);
+
+  const hdg = headingDeg;
+  const dir = dirFromHeading(hdg);
+
+  hudCtx.font = '900 58px ui-monospace, Menlo, Consolas, monospace';
+  hudCtx.fillText(`${dir} ${pad3(hdg)}°`, 52, 210);
+
+  // Crosshair
+  hudCtx.shadowBlur = 0;
+  hudCtx.strokeStyle = 'rgba(0,229,255,0.80)';
+  hudCtx.lineWidth = 2;
+  hudCtx.beginPath();
+  hudCtx.moveTo(w/2 - 18, h/2);
+  hudCtx.lineTo(w/2 + 18, h/2);
+  hudCtx.moveTo(w/2, h/2 - 18);
+  hudCtx.lineTo(w/2, h/2 + 18);
+  hudCtx.stroke();
+
+  // Speed + coords
+  const kmh = speedMS * 3.6;
+  hudCtx.fillStyle = 'rgba(118,255,3,0.95)';
+  hudCtx.shadowColor = 'rgba(118,255,3,0.60)';
+  hudCtx.shadowBlur = 12;
+  hudCtx.font = '900 42px ui-monospace, Menlo, Consolas, monospace';
+  hudCtx.fillText(`${Number.isFinite(kmh) ? kmh.toFixed(1) : '--'} km/h`, w-385, 92);
+
+  hudCtx.shadowBlur = 0;
+  hudCtx.fillStyle = 'rgba(0,229,255,0.90)';
+  hudCtx.font = '800 20px ui-monospace, Menlo, Consolas, monospace';
+  hudCtx.fillText(`LAT ${lat != null ? lat.toFixed(6) : '--.------'}`, w-385, 130);
+  hudCtx.fillText(`LON ${lon != null ? lon.toFixed(6) : '--.------'}`, w-385, 156);
+
+  // Threat (simple placeholder)
+  const threat = clamp(5 + (kmh > 20 ? 10 : 0), 0, 100);
+  hudCtx.fillStyle = 'rgba(0,229,255,0.25)';
+  hudCtx.fillRect(w-385, 186, 320, 14);
+  hudCtx.fillStyle = threat < 20 ? 'rgba(118,255,3,0.90)' : 'rgba(0,229,255,0.90)';
+  hudCtx.fillRect(w-385, 186, 320*(threat/100), 14);
+  hudCtx.fillStyle = 'rgba(0,229,255,0.90)';
+  hudCtx.fillText(`THREAT ${Math.round(threat)}%`, w-385, 226);
+
+  if (!hasOrientation) {
+    hudCtx.fillStyle = 'rgba(255,109,0,0.95)';
+    hudCtx.font = '900 18px ui-monospace, Menlo, Consolas, monospace';
+    hudCtx.fillText('MOTION NOT GRANTED (PRESS MOTION PERMISSION)', 52, h-26);
+  } else {
+    hudCtx.fillStyle = 'rgba(0,229,255,0.70)';
+    hudCtx.font = '800 18px ui-monospace, Menlo, Consolas, monospace';
+    hudCtx.fillText(`ROLL ${rollDeg.toFixed(1)}°  PITCH ${pitchDeg.toFixed(1)}°`, 52, h-26);
+  }
+
+  // Scanlines
+  hudCtx.save();
+  hudCtx.globalAlpha = 0.08;
+  hudCtx.fillStyle = '#00e5ff';
+  for (let y=0; y<h; y+=4) hudCtx.fillRect(18, y, w-36, 1);
+  hudCtx.restore();
+
+  hudCtx.restore();
+}
+
+/* =========================
+   COLUMN-MAJOR MAT4 (WebGL/WebXR compatible)
+========================= */
+function mat4Identity() {
+  const m = new Float32Array(16);
+  m[0]=1; m[5]=1; m[10]=1; m[15]=1;
+  return m;
+}
+function mat4Mul(a,b) {
+  // column-major, out = a * b
+  const out = new Float32Array(16);
+  const a00=a[0], a01=a[1], a02=a[2], a03=a[3];
+  const a10=a[4], a11=a[5], a12=a[6], a13=a[7];
+  const a20=a[8], a21=a[9], a22=a[10],a23=a[11];
+  const a30=a[12],a31=a[13],a32=a[14],a33=a[15];
+
+  let b0,b1,b2,b3;
+
+  // 1st column
+  b0=b[0]; b1=b[1]; b2=b[2]; b3=b[3];
+  out[0]=a00*b0 + a10*b1 + a20*b2 + a30*b3;
+  out[1]=a01*b0 + a11*b1 + a21*b2 + a31*b3;
+  out[2]=a02*b0 + a12*b1 + a22*b2 + a32*b3;
+  out[3]=a03*b0 + a13*b1 + a23*b2 + a33*b3;
+
+  // 2nd column
+  b0=b[4]; b1=b[5]; b2=b[6]; b3=b[7];
+  out[4]=a00*b0 + a10*b1 + a20*b2 + a30*b3;
+  out[5]=a01*b0 + a11*b1 + a21*b2 + a31*b3;
+  out[6]=a02*b0 + a12*b1 + a22*b2 + a32*b3;
+  out[7]=a03*b0 + a13*b1 + a23*b2 + a33*b3;
+
+  // 3rd column
+  b0=b[8]; b1=b[9]; b2=b[10]; b3=b[11];
+  out[8]=a00*b0 + a10*b1 + a20*b2 + a30*b3;
+  out[9]=a01*b0 + a11*b1 + a21*b2 + a31*b3;
+  out[10]=a02*b0 + a12*b1 + a22*b2 + a32*b3;
+  out[11]=a03*b0 + a13*b1 + a23*b2 + a33*b3;
+
+  // 4th column
+  b0=b[12]; b1=b[13]; b2=b[14]; b3=b[15];
+  out[12]=a00*b0 + a10*b1 + a20*b2 + a30*b3;
+  out[13]=a01*b0 + a11*b1 + a21*b2 + a31*b3;
+  out[14]=a02*b0 + a12*b1 + a22*b2 + a32*b3;
+  out[15]=a03*b0 + a13*b1 + a23*b2 + a33*b3;
+
+  return out;
+}
+function mat4Translate(x,y,z) {
+  const m = mat4Identity();
+  m[12]=x; m[13]=y; m[14]=z;
+  return m;
+}
+function mat4Scale(x,y,z) {
+  const m = mat4Identity();
+  m[0]=x; m[5]=y; m[10]=z;
+  return m;
+}
+
+/* =========================
+   WEBGL SHADERS
+========================= */
+function compileShader(gl, type, src) {
   const sh = gl.createShader(type);
   gl.shaderSource(sh, src);
   gl.compileShader(sh);
@@ -360,10 +391,9 @@ function createShader(gl, type, src) {
   }
   return sh;
 }
-
 function createProgram(gl, vsSrc, fsSrc) {
-  const vs = createShader(gl, gl.VERTEX_SHADER, vsSrc);
-  const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSrc);
+  const vs = compileShader(gl, gl.VERTEX_SHADER, vsSrc);
+  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSrc);
   const p = gl.createProgram();
   gl.attachShader(p, vs);
   gl.attachShader(p, fs);
@@ -376,38 +406,6 @@ function createProgram(gl, vsSrc, fsSrc) {
     throw new Error(info || 'Program link failed');
   }
   return p;
-}
-
-// Basic matrix math for MVP
-function mat4Identity() {
-  return new Float32Array([1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1]);
-}
-function mat4Mul(a,b) {
-  const o = new Float32Array(16);
-  for (let r=0;r<4;r++){
-    for (let c=0;c<4;c++){
-      o[c + r*4] =
-        a[0 + r*4]*b[c + 0*4] +
-        a[1 + r*4]*b[c + 1*4] +
-        a[2 + r*4]*b[c + 2*4] +
-        a[3 + r*4]*b[c + 3*4];
-    }
-  }
-  return o;
-}
-function mat4Translate(x,y,z) {
-  const m = mat4Identity();
-  m[12]=x; m[13]=y; m[14]=z;
-  return m;
-}
-function mat4Scale(x,y,z) {
-  const m = mat4Identity();
-  m[0]=x; m[5]=y; m[10]=z;
-  return m;
-}
-function mat4FromXrMatrix(m) {
-  // WebXR gives Float32Array(16) already.
-  return new Float32Array(m);
 }
 
 function initGLResources() {
@@ -427,26 +425,22 @@ function initGLResources() {
     uniform sampler2D uTex;
     void main() {
       vec4 c = texture2D(uTex, vUV);
-      // Keep alpha, so passthrough shows through
-      gl_FragColor = c;
+      gl_FragColor = c; // keep alpha
     }
   `;
   program = createProgram(gl, vsSrc, fsSrc);
-
-  const aPos = gl.getAttribLocation(program, 'aPos');
-  const aUV  = gl.getAttribLocation(program, 'aUV');
+  program.aPos = gl.getAttribLocation(program, 'aPos');
+  program.aUV  = gl.getAttribLocation(program, 'aUV');
   program.uMVP = gl.getUniformLocation(program, 'uMVP');
   program.uTex = gl.getUniformLocation(program, 'uTex');
 
-  // Quad in local space centered at origin:
-  // We'll place it at z = -1m and scale to desired size in meters.
-  // Size suggestion: width ~ 1.2m, height ~ 0.6m (tweak)
+  // Quad (two triangles), centered at origin
   const verts = new Float32Array([
-    // x, y, z,   u, v
-    -0.5, -0.5, 0,  0, 1,
-     0.5, -0.5, 0,  1, 1,
-     0.5,  0.5, 0,  1, 0,
-    -0.5,  0.5, 0,  0, 0,
+    // x, y, z,    u, v
+    -0.5, -0.5,  0.0,  0.0, 1.0,
+     0.5, -0.5,  0.0,  1.0, 1.0,
+     0.5,  0.5,  0.0,  1.0, 0.0,
+    -0.5,  0.5,  0.0,  0.0, 0.0,
   ]);
   const inds = new Uint16Array([0,1,2, 0,2,3]);
 
@@ -458,42 +452,44 @@ function initGLResources() {
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, inds, gl.STATIC_DRAW);
 
-  // Texture from HUD canvas
   tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  // Allocate initial
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, hudCanvas.width, hudCanvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 
-  // VAO not guaranteed in WebGL1. We'll just set attribs each frame.
   gl.useProgram(program);
   gl.uniform1i(program.uTex, 0);
 
-  log('WebGL resources initialized (program, buffers, texture).');
+  log('WebGL resources ready.');
 }
 
+/* =========================
+   HUD TEXTURE UPLOAD
+========================= */
 function uploadHudTexture(nowMs) {
-  // Update at most ~30fps to keep it smooth without burning everything.
-  if (nowMs - lastHudUpload < 33) return;
+  if (nowMs - lastHudUpload < 33) return; // ~30 fps
   lastHudUpload = nowMs;
 
   drawHud2D(nowMs);
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, tex);
+
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, hudCanvas);
 
   if (mirrorOn) {
-    const mctx = mirrorCanvas.getContext('2d');
-    mctx.clearRect(0,0,mirrorCanvas.width, mirrorCanvas.height);
-    mctx.drawImage(hudCanvas, 0, 0, mirrorCanvas.width, mirrorCanvas.height);
+    mirrorCtx.clearRect(0,0,mirrorCanvas.width, mirrorCanvas.height);
+    mirrorCtx.drawImage(hudCanvas, 0, 0, mirrorCanvas.width, mirrorCanvas.height);
   }
 }
 
+/* =========================
+   XR RENDER LOOP (HEAD-LOCKED)
+========================= */
 function drawXRFrame(time, frame) {
   if (!xrSession) return;
   xrSession.requestAnimationFrame(drawXRFrame);
@@ -504,125 +500,119 @@ function drawXRFrame(time, frame) {
   uploadHudTexture(time);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, xrLayer.framebuffer);
+
+  // Quest can be picky: force these states
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-  // transparent clear so passthrough stays visible
+  // transparent clear so passthrough shows
   gl.clearColor(0,0,0,0);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.disable(gl.DEPTH_TEST); // HUD should always be on top
+  gl.clear(gl.COLOR_BUFFER_BIT);
 
   gl.useProgram(program);
 
-  // Bind buffers & attributes
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
 
   const stride = 5 * 4;
-  const aPos = gl.getAttribLocation(program, 'aPos');
-  const aUV  = gl.getAttribLocation(program, 'aUV');
+  gl.enableVertexAttribArray(program.aPos);
+  gl.vertexAttribPointer(program.aPos, 3, gl.FLOAT, false, stride, 0);
 
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, stride, 0);
-
-  gl.enableVertexAttribArray(aUV);
-  gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, stride, 3*4);
+  gl.enableVertexAttribArray(program.aUV);
+  gl.vertexAttribPointer(program.aUV, 2, gl.FLOAT, false, stride, 3*4);
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, tex);
 
-  // Model: head-locked quad in front of viewer
-  // Position: slightly down so it doesn't block center view too much.
-  // Tweak these for comfort.
-  const z = -1.15;      // meters in front
-  const y = -0.08;      // a bit down
-  const x =  0.0;
+  // Build a truly head-locked model matrix using the viewer pose matrix.
+  // Model = viewerPose * translate(offset) * scale(size)
+  const viewerM = pose.transform.matrix; // Float32Array(16), column-major
+  const offsetM = mat4Mul(mat4Translate(0.0, -0.10, -1.10), mat4Scale(1.30, 0.65, 1.0));
+  const modelM  = mat4Mul(viewerM, offsetM);
 
-  const widthM  = 1.25; // overall quad width in meters
-  const heightM = 0.62; // overall quad height in meters
-
-  const M = mat4Mul(mat4Translate(x,y,z), mat4Scale(widthM, heightM, 1));
-
-  // Draw per-view (each eye)
   for (const view of pose.views) {
     const vp = xrLayer.getViewport(view);
     gl.viewport(vp.x, vp.y, vp.width, vp.height);
 
-    const P = mat4FromXrMatrix(view.projectionMatrix);
-    const V = mat4FromXrMatrix(view.transform.inverse.matrix);
+    const projM = view.projectionMatrix;                 // column-major
+    const viewM = view.transform.inverse.matrix;         // column-major
+    const mvp   = mat4Mul(projM, mat4Mul(viewM, modelM));
 
-    const MVP = mat4Mul(P, mat4Mul(V, M));
-    gl.uniformMatrix4fv(program.uMVP, false, MVP);
-
+    gl.uniformMatrix4fv(program.uMVP, false, mvp);
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
   }
 }
 
-/* ============================================================
-   XR Session Management
-============================================================ */
+/* =========================
+   XR SESSION CONTROL
+========================= */
 async function enterAR() {
   if (xrSession) return;
 
-  if (!isSecure()) {
-    warn('Not HTTPS. WebXR immersive-ar often requires HTTPS. Use HTTPS or localhost.');
+  if (!isSecureContextEnough()) {
+    warn('Not HTTPS (or localhost). WebXR AR often requires HTTPS.');
   }
 
-  const xrCheck = await checkWebXR();
-  if (!xrCheck.ok) {
-    err(xrCheck.reason);
-    return;
-  }
-  log(xrCheck.reason);
+  const s = await xrSupport();
+  if (!s.ok) { die(s.why); return; }
+  log(s.why);
 
   try {
-    // Required: local reference space.
-    // We do NOT request dom-overlay at all.
     xrSession = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['local'],
-      optionalFeatures: ['local-floor'] // harmless if unsupported
+      optionalFeatures: ['local-floor']
     });
 
-    enterBtn.disabled = true;
-    exitBtn.disabled = false;
-    log('XR session started: immersive-ar');
+    log(`XR environmentBlendMode: ${xrSession.environmentBlendMode}`);
+    if (xrSession.environmentBlendMode === 'opaque') {
+      warn('Blend mode is opaque. Passthrough will likely be black or not true MR.');
+    }
 
-    // Create WebGL context compatible with XR
+    enterBtn.disabled = true;
+    exitBtn.disabled  = false;
+
+    // XR-compatible WebGL
     const xrCanvas = document.createElement('canvas');
     gl = xrCanvas.getContext('webgl', {
       xrCompatible: true,
       alpha: true,
       antialias: true,
-      premultipliedAlpha: true,
-      preserveDrawingBuffer: false
+      premultipliedAlpha: true
     });
     if (!gl) throw new Error('Failed to create WebGL context.');
 
     xrLayer = new XRWebGLLayer(xrSession, gl, { alpha: true });
     xrSession.updateRenderState({ baseLayer: xrLayer });
 
-    // Reference space
     try {
       xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
-      log('Using reference space: local-floor');
+      log('ReferenceSpace: local-floor');
     } catch {
       xrRefSpace = await xrSession.requestReferenceSpace('local');
-      log('Using reference space: local');
+      log('ReferenceSpace: local');
     }
 
     initGLResources();
 
-    xrSession.addEventListener('end', onXREnd);
+    xrSession.addEventListener('end', () => {
+      log('XR ended.');
+      cleanupXR();
+      document.getElementById('ui').style.display = 'flex';
+      enterBtn.disabled = false;
+      exitBtn.disabled  = true;
+    });
+
+    // Hide HTML UI so it doesn’t block your view. HUD is inside XR now.
+    document.getElementById('ui').style.display = 'none';
+
+    // Kick render loop
     xrSession.requestAnimationFrame(drawXRFrame);
 
-    // Hide 2D UI overlay, so you see passthrough + XR HUD only.
-    // (The XR HUD is inside the scene.)
-    document.getElementById('ui').style.display = 'none';
-    hudMode = 'XR-AR';
-
   } catch(e) {
-    err(`Failed to start XR AR: ${e.message}`);
-    await cleanupXR();
+    die(`enterAR failed: ${e.message}`);
+    cleanupXR();
   }
 }
 
@@ -632,90 +622,65 @@ async function exitAR() {
   catch(e){ warn(`xrSession.end failed: ${e.message}`); }
 }
 
-function onXREnd() {
-  log('XR session ended.');
-  cleanupXR();
-  document.getElementById('ui').style.display = 'flex';
-  enterBtn.disabled = false;
-  exitBtn.disabled = true;
-  hudMode = 'AR';
-}
-
-async function cleanupXR() {
-  xrSession = null;
-  xrRefSpace = null;
-
-  // Release GL stuff
-  if (gl) {
-    try {
+function cleanupXR() {
+  try {
+    if (gl) {
       if (tex) gl.deleteTexture(tex);
       if (vbo) gl.deleteBuffer(vbo);
       if (ibo) gl.deleteBuffer(ibo);
       if (program) gl.deleteProgram(program);
-    } catch {}
-  }
-  gl = null;
+    }
+  } catch {}
+
+  tex = null; vbo = null; ibo = null; program = null;
   xrLayer = null;
-  program = null;
-  tex = null;
-  vbo = null;
-  ibo = null;
+  gl = null;
+  xrRefSpace = null;
+  xrSession = null;
 }
 
-/* ============================================================
-   UI wire-up
-============================================================ */
+/* =========================
+   UI WIRING
+========================= */
 enterBtn.addEventListener('click', enterAR);
 exitBtn.addEventListener('click', exitAR);
-permBtn.addEventListener('click', requestMotionPermissionIfNeeded);
+permBtn.addEventListener('click', requestMotionPermission);
 
 mirrorBtn.addEventListener('click', () => {
   mirrorOn = !mirrorOn;
   mirrorCanvas.style.display = mirrorOn ? 'block' : 'none';
-  if (mirrorOn) {
-    mirrorCanvas.width = 220;
-    mirrorCanvas.height = 140;
-    log('Mirror ON (shows the HUD texture source).');
-  } else {
-    log('Mirror OFF.');
-  }
+  log(mirrorOn ? 'HUD mirror ON (shows the texture source)' : 'HUD mirror OFF');
 });
 
-/* ============================================================
-   Startup
-============================================================ */
-(async function boot() {
-  log('Booting…');
+/* =========================
+   BOOT
+========================= */
+(async function boot(){
   log(`Origin: ${location.origin}`);
-  log(`Secure context: ${isSecure() ? 'yes' : 'no'}`);
-  if (!navigator.xr) warn('navigator.xr missing (no WebXR).');
+  log(`Secure: ${isSecureContextEnough() ? 'yes' : 'no'}`);
+  if (!navigator.xr) warn('navigator.xr missing.');
 
-  // Start geo in background (optional)
   startGeo();
 
-  // Auto-add orientation listener on platforms that don't require permission
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission !== 'function') {
     window.addEventListener('deviceorientation', onOrient, true);
-    log('Device orientation listener active (no permission API).');
+    log('Motion listener active (no permission API).');
   } else {
-    log('Motion permission may be required. Tap REQUEST MOTION PERMISSION.');
+    log('Press MOTION PERMISSION if you want compass-ish heading on supported platforms.');
   }
 
-  // Pre-draw HUD so texture is non-empty
   drawHud2D(performance.now());
 
-  // Pre-check XR support and disable button if impossible
-  const xrCheck = await checkWebXR();
-  if (!xrCheck.ok) {
+  const s = await xrSupport();
+  if (!s.ok) {
     enterBtn.disabled = true;
-    err(xrCheck.reason);
-    warn('If this is Quest 3: open this in Meta/Oculus Browser, and serve over HTTPS.');
+    die(s.why);
+    warn('On Quest: open in Meta/Oculus Browser, and serve over HTTPS.');
   } else {
     log('Ready: immersive-ar supported.');
   }
 })();
 </script>
-
 </body>
 </html>
