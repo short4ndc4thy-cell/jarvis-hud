@@ -20,6 +20,16 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;width:100vw;height:100vh;overflow:hidden;}
 
+/* CAMERA BACKGROUND (AR FALLBACK) */
+#bgCam{
+  position:fixed; inset:0;
+  width:100vw; height:100vh;
+  object-fit:cover;
+  z-index:0;
+  display:none;
+  background:#000;
+}
+
 /* ── BOOT ── */
 #boot{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .6s ease;}
 #boot.gone{opacity:0;pointer-events:none;}
@@ -35,7 +45,13 @@ body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;widt
 @keyframes fi{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
 
 /* ── HUD WRAPPER ── */
-#hud{position:fixed;inset:0;opacity:0;pointer-events:none;transition:opacity .8s ease;}
+#hud{
+  position:fixed; inset:0;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .8s ease;
+  z-index:10;
+}
 #hud.on{opacity:1;}
 
 /* layers */
@@ -170,6 +186,9 @@ body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;widt
 </head>
 <body>
 
+<!-- BACKGROUND CAMERA FOR AR FALLBACK -->
+<video id="bgCam" autoplay playsinline muted></video>
+
 <!-- BOOT -->
 <div id="boot">
   <div class="b-logo">JARVIS</div>
@@ -291,16 +310,20 @@ body{background:#000;color:var(--c);font-family:'Share Tech Mono',monospace;widt
   <div class="alerts" id="alerts"></div>
 </div>
 
-<button id="xrbtn" onclick="enterXR()">◈ ENTER AR MODE</button>
+<button id="xrbtn" onclick="enterAR()">◈ ENTER AR MODE</button>
 
 <script>
 var lat=null,lon=null,heading=0,speed=0;
-var map=null,mapMarker=null,selfCircle=null;
+var map=null;
 var waypoints=[];
 var hasRealSensor=false;
 var demoHdg=0;
 var cocoModel=null;
 var detInterval=null;
+
+// AR mode state
+var xrSession=null;
+var bgStream=null;
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 setTimeout(function(){
@@ -361,7 +384,6 @@ function updateCompass(hdg){
   document.getElementById('hdgBig').textContent=hdgToDir(hdg);
   document.getElementById('hdgDeg').textContent=String(Math.round(hdg)).padStart(3,'0')+'°';
   document.getElementById('mapHdgLine').style.transform='rotate('+hdg+'deg)';
-  if(map) map.setBearing ? map.setBearing(-hdg) : null;
   updateWaypointDistances();
   updateThreat();
 }
@@ -404,11 +426,6 @@ setInterval(function(){
   }
 },50);
 
-window.addEventListener('keydown',function(e){
-  if(e.key==='ArrowLeft'){hasRealSensor=true;heading=(heading-5+360)%360;updateCompass(heading);}
-  if(e.key==='ArrowRight'){hasRealSensor=true;heading=(heading+5)%360;updateCompass(heading);}
-});
-
 // ── GEO ───────────────────────────────────────────────────────────────────────
 function startGeo(){
   if(!navigator.geolocation) return;
@@ -424,7 +441,6 @@ function startGeo(){
     if(map) updateMapPos();
     fetchWeather();
   },function(){
-    // demo coords
     lat=48.8566; lon=2.3522;
     document.getElementById('lat').textContent='48.856600° [DEMO]';
     document.getElementById('lon').textContent='2.352200° [DEMO]';
@@ -443,7 +459,6 @@ function initMap(){
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
 
-  // Click on main canvas to add waypoint
   document.getElementById('minimap').addEventListener('click',function(e){
     if(!map) return;
     var rect=this.getBoundingClientRect();
@@ -456,8 +471,6 @@ function initMap(){
 function updateMapPos(){
   if(!lat||!lon) return;
   map.setView([lat,lon],16);
-  if(mapMarker) map.removeLayer(mapMarker);
-  // We use the overlay dot instead of a marker for the self position
 }
 
 function addWaypoint(wlat,wlon,name){
@@ -569,7 +582,6 @@ function startSensors(){
     var az=e.accelerationIncludingGravity.z||0;
     var g=Math.sqrt(ax*ax+ay*ay+az*az)/9.81;
     document.getElementById('gforce').textContent='G: '+g.toFixed(2);
-    // Update threat based on G
     updateThreat(g);
   });
 }
@@ -607,21 +619,18 @@ function updateThreat(gForce){
 function startDetection(){
   var video=document.getElementById('camFeed');
   var canvas=document.getElementById('detCanvas');
-  var panel=document.getElementById('detectPanel');
 
-  // Load model
   if(typeof cocoSsd==='undefined') return;
   cocoSsd.load().then(function(model){
     cocoModel=model;
     addAlert('OBJECT DETECTION READY','ok');
-    // Start camera
     navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false})
     .then(function(stream){
       video.srcObject=stream;
       video.onloadedmetadata=function(){
         canvas.width=window.innerWidth;
         canvas.height=window.innerHeight;
-        canvas.style.opacity='0'; // invisible detection
+        canvas.style.opacity='0';
         runDetection();
       };
     }).catch(function(){
@@ -640,8 +649,7 @@ function runDetection(){
     cocoModel.detect(video).then(function(preds){
       personCount=preds.filter(function(p){return p.class==='person';}).length;
       var html='';
-      var shown=preds.slice(0,6);
-      shown.forEach(function(p){
+      preds.slice(0,6).forEach(function(p){
         var isPerson=p.class==='person';
         var conf=Math.round(p.score*100);
         html+='<div class="det-item '+(isPerson?'person':'object')+'">'
@@ -694,49 +702,108 @@ function scheduleAlerts(){
   setTimeout(function(){addAlert('TAP MAP TO DROP WAYPOINT','info');},6000);
 }
 
-// ── WEBXR ─────────────────────────────────────────────────────────────────────
-var xrSession=null;
-async function enterXR(){
+// ── AR (QUICK STABLE HACK) ───────────────────────────────────────────────────
+// 1) Try REAL WebXR AR *only if* DOM overlay exists (requiredFeatures includes dom-overlay).
+// 2) If that fails, fallback to camera passthrough with HUD on top.
+
+async function enterAR(){
   var btn=document.getElementById('xrbtn');
-  if(xrSession){xrSession.end();return;}
-  if(!navigator.xr){addAlert('WebXR NOT AVAILABLE','warn');return;}
+
+  // Toggle OFF
+  if(xrSession || bgStream){
+    await exitAR();
+    return;
+  }
+
+  // Try WebXR AR with DOM overlay REQUIRED (so it won't "work" without HUD).
+  var xrTried = false;
   try{
-    var arOk=await navigator.xr.isSessionSupported('immersive-ar');
-    var mode=arOk?'immersive-ar':'immersive-vr';
-    var opts=arOk?{
-      requiredFeatures:['local'],
-      optionalFeatures:['dom-overlay'],
-      domOverlay:{root:document.getElementById('hud')}
-    }:{requiredFeatures:['local']};
-    xrSession=await navigator.xr.requestSession(mode,opts);
-    btn.textContent='◈ EXIT AR';
-    addAlert('AR MODE ACTIVE','ok');
-    document.body.style.background='transparent';
-    xrSession.addEventListener('end',function(){
-      xrSession=null;
-      btn.textContent='◈ ENTER AR MODE';
-      document.body.style.background='#000';
-      addAlert('AR ENDED','info');
-    });
-    var gl=document.createElement('canvas').getContext('webgl',{xrCompatible:true});
-    var layer=new XRWebGLLayer(xrSession,gl);
-    xrSession.updateRenderState({baseLayer:layer});
-    var ref=await xrSession.requestReferenceSpace('local');
-    function frame(t,f){
-      if(!xrSession)return;
-      xrSession.requestAnimationFrame(frame);
-      var pose=f.getViewerPose(ref);
-      if(pose){
-        var q=pose.transform.orientation;
-        var yaw=Math.atan2(2*(q.w*q.y+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
-        hasRealSensor=true;
-        updateCompass(((yaw*180/Math.PI)+360)%360);
+    if(navigator.xr){
+      xrTried = true;
+      var arOk = await navigator.xr.isSessionSupported('immersive-ar');
+      if(arOk){
+        // DOM overlay must be supported or requestSession will throw.
+        var opts = {
+          requiredFeatures:['local','dom-overlay'],
+          domOverlay:{ root: document.getElementById('hud') }
+        };
+        xrSession = await navigator.xr.requestSession('immersive-ar', opts);
+
+        btn.textContent='◈ EXIT AR';
+        addAlert('XR AR + HUD ACTIVE','ok');
+
+        xrSession.addEventListener('end',function(){
+          xrSession=null;
+          btn.textContent='◈ ENTER AR MODE';
+          addAlert('XR AR ENDED','info');
+        });
+
+        // Minimal render loop to keep session alive (we don't draw anything).
+        var gl = document.createElement('canvas').getContext('webgl',{xrCompatible:true});
+        var layer = new XRWebGLLayer(xrSession,gl);
+        xrSession.updateRenderState({baseLayer:layer});
+        var ref = await xrSession.requestReferenceSpace('local');
+
+        function frame(t,f){
+          if(!xrSession) return;
+          xrSession.requestAnimationFrame(frame);
+          var pose=f.getViewerPose(ref);
+          if(pose){
+            var q=pose.transform.orientation;
+            var yaw=Math.atan2(2*(q.w*q.y+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
+            hasRealSensor=true;
+            updateCompass(((yaw*180/Math.PI)+360)%360);
+          }
+        }
+        xrSession.requestAnimationFrame(frame);
+        return;
       }
     }
-    xrSession.requestAnimationFrame(frame);
   } catch(e){
-    addAlert('XR ERROR: '+e.message,'warn');
+    // fall through to camera AR
+    addAlert('XR HUD UNSUPPORTED, FALLING BACK','warn');
   }
+
+  // Fallback: camera passthrough background + HUD on top.
+  try{
+    await startCameraBackground();
+    btn.textContent='◈ EXIT AR';
+    addAlert('CAMERA AR ACTIVE','ok');
+  } catch(e){
+    // If WebXR was available but dom overlay wasn't, and camera also fails, be blunt.
+    if(xrTried) addAlert('XR FAILED + CAMERA FAILED','danger');
+    addAlert('AR ERROR: '+e.message,'warn');
+  }
+}
+
+async function startCameraBackground(){
+  var bg=document.getElementById('bgCam');
+  bgStream = await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:'environment'},
+    audio:false
+  });
+  bg.srcObject = bgStream;
+  bg.style.display='block';
+  // Darken vignette still looks good, keep it.
+}
+
+async function exitAR(){
+  var btn=document.getElementById('xrbtn');
+  if(xrSession){
+    try{ await xrSession.end(); }catch(_){}
+    xrSession=null;
+  }
+  if(bgStream){
+    try{
+      bgStream.getTracks().forEach(function(t){ t.stop(); });
+    }catch(_){}
+    bgStream=null;
+    var bg=document.getElementById('bgCam');
+    bg.srcObject=null;
+    bg.style.display='none';
+  }
+  btn.textContent='◈ ENTER AR MODE';
+  addAlert('AR OFF','info');
 }
 </script>
 </body>
