@@ -6,987 +6,552 @@
 <title>J.A.R.V.I.S. HUD</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+--c:#00f0ff;--cd:#00a0aa;--cg:rgba(0,240,255,0.35);
+--pb:rgba(0,12,18,0.55);--pbo:rgba(0,240,255,0.25);
+--r:#ff3040;--o:#ff8800;--g:#00ff88;--y:#ffdd00;
+--fd:'Orbitron',sans-serif;--fm:'Share Tech Mono',monospace;
+}
+html,body{width:100%;height:100%;overflow:hidden;background:rgba(0,2,4,0.85);font-family:var(--fm);color:var(--c);-webkit-user-select:none;user-select:none}
+#scanlines{position:fixed;inset:0;pointer-events:none;z-index:9999;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,240,255,0.015) 2px,rgba(0,240,255,0.015) 4px)}
+.cb{position:fixed;width:60px;height:60px;border-color:var(--cd);border-style:solid;border-width:0;z-index:100;opacity:.6}
+.cb.tl{top:12px;left:12px;border-top-width:2px;border-left-width:2px}
+.cb.tr{top:12px;right:12px;border-top-width:2px;border-right-width:2px}
+.cb.bl{bottom:12px;left:12px;border-bottom-width:2px;border-left-width:2px}
+.cb.br{bottom:12px;right:12px;border-bottom-width:2px;border-right-width:2px}
 
-:root {
-  --cyan: #00f0ff;
-  --cyan-dim: #00a0aa;
-  --cyan-glow: rgba(0, 240, 255, 0.35);
-  --panel-bg: rgba(0, 12, 18, 0.55);
-  --panel-border: rgba(0, 240, 255, 0.25);
-  --red: #ff3040;
-  --orange: #ff8800;
-  --green: #00ff88;
-  --yellow: #ffdd00;
-  --font-display: 'Orbitron', sans-serif;
-  --font-mono: 'Share Tech Mono', monospace;
-}
+#boot{position:fixed;inset:0;z-index:20000;background:rgba(0,4,8,0.95);display:flex;flex-direction:column;justify-content:center;align-items:center;transition:opacity .6s}
+#boot.done{opacity:0;pointer-events:none}
+#boot h1{font-family:var(--fd);font-size:32px;font-weight:900;letter-spacing:10px;text-shadow:0 0 30px var(--cg),0 0 60px rgba(0,240,255,.15);margin-bottom:30px;opacity:0;animation:fi .6s .3s forwards}
+@keyframes fi{to{opacity:1}}
+#blog{font-family:var(--fm);font-size:11px;color:var(--cd);line-height:1.8;letter-spacing:1px;max-width:500px;width:90%}
+#blog .l{opacity:0;transform:translateY(4px);transition:all .3s}
+#blog .l.v{opacity:1;transform:translateY(0)}
+#blog .l .s{float:right}
+#blog .l .s.ok{color:var(--g)}
+#blog .l .s.w{color:var(--y)}
 
-html, body {
-  width: 100%; height: 100%;
-  overflow: hidden;
-  background: rgba(0, 2, 4, 0.85);
-  font-family: var(--font-mono);
-  color: var(--cyan);
-  -webkit-user-select: none;
-  user-select: none;
-}
+#hud{position:fixed;inset:0;opacity:0;transition:opacity .8s;pointer-events:none}
+#hud.on{opacity:1}
+#hud>*{pointer-events:auto}
 
-/* ── SCANLINES ── */
-#scanlines {
-  position: fixed; inset: 0;
-  pointer-events: none; z-index: 9999;
-  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,240,255,0.015) 2px, rgba(0,240,255,0.015) 4px);
-}
+.p{background:var(--pb);border:1px solid var(--pbo);padding:10px 14px;position:relative;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.p::before{content:'';position:absolute;top:-1px;left:-1px;right:-1px;bottom:-1px;box-shadow:0 0 15px rgba(0,240,255,.08),inset 0 0 15px rgba(0,240,255,.03);pointer-events:none}
+.pt{font-family:var(--fd);font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--cd);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.pt::before{content:'\25C6';font-size:6px;color:var(--c);animation:pd 2s infinite}
+@keyframes pd{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* ── CORNER BRACKETS ── */
-.corner-bracket {
-  position: fixed; width: 60px; height: 60px;
-  border-color: var(--cyan-dim); border-style: solid; border-width: 0;
-  z-index: 100; opacity: 0.6;
-}
-.corner-bracket.tl { top: 12px; left: 12px; border-top-width: 2px; border-left-width: 2px; }
-.corner-bracket.tr { top: 12px; right: 12px; border-top-width: 2px; border-right-width: 2px; }
-.corner-bracket.bl { bottom: 12px; left: 12px; border-bottom-width: 2px; border-left-width: 2px; }
-.corner-bracket.br { bottom: 12px; right: 12px; border-bottom-width: 2px; border-right-width: 2px; }
+/* COMPASS */
+#cbar{position:fixed;top:14px;left:50%;transform:translateX(-50%);width:min(600px,80vw);z-index:50}
+#csc{width:100%;height:36px;overflow:hidden;position:relative;border-bottom:1px solid var(--pbo);background:var(--pb);backdrop-filter:blur(4px)}
+#cs{position:absolute;top:0;left:0;height:100%;white-space:nowrap;display:flex;align-items:center;font-family:var(--fd);font-size:11px;letter-spacing:2px;transition:transform .15s linear}
+.ct{display:inline-flex;flex-direction:column;align-items:center;width:40px;flex-shrink:0}
+.ct .tl2{width:1px;height:10px;background:var(--cd);margin-bottom:2px}
+.ct.ca .tl2{height:16px;background:var(--c);box-shadow:0 0 6px var(--cg)}
+.ct.ca .tla{font-size:13px;font-weight:700;color:var(--c);text-shadow:0 0 8px var(--cg)}
+.ct .tla{font-size:9px;color:var(--cd)}
+#cpin{position:absolute;top:0;left:50%;transform:translateX(-50%);width:2px;height:100%;background:var(--c);box-shadow:0 0 8px var(--cg);z-index:2}
+#cpin::after{content:'\25BC';position:absolute;bottom:-2px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--c);text-shadow:0 0 8px var(--cg)}
+#chr{text-align:center;font-family:var(--fd);font-size:14px;font-weight:700;padding:4px 0;letter-spacing:3px;text-shadow:0 0 10px var(--cg);background:var(--pb);border:1px solid var(--pbo);border-top:none}
 
-/* ── PERMISSION GATE ── */
-#permission-gate {
-  position: fixed; inset: 0; z-index: 20000;
-  background: rgba(0, 4, 8, 0.95);
-  display: flex; flex-direction: column;
-  justify-content: center; align-items: center;
-  transition: opacity 0.6s ease;
-}
-#permission-gate.done { opacity: 0; pointer-events: none; }
+/* TOP LEFT */
+#tl{position:fixed;top:14px;left:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.time{font-family:var(--fd);font-size:28px;font-weight:900;letter-spacing:2px;text-shadow:0 0 15px var(--cg)}
+.date{font-size:11px;color:var(--cd);letter-spacing:2px}
+.sv{font-family:var(--fd);font-size:36px;font-weight:900;letter-spacing:1px;text-shadow:0 0 20px var(--cg)}
+.su{font-family:var(--fd);font-size:10px;letter-spacing:3px;color:var(--cd);margin-left:4px}
+.gv{font-family:var(--fd);font-size:22px;font-weight:700;text-shadow:0 0 10px var(--cg)}
 
-#permission-gate h1 {
-  font-family: var(--font-display);
-  font-size: 32px; font-weight: 900;
-  letter-spacing: 10px;
-  text-shadow: 0 0 30px var(--cyan-glow), 0 0 60px rgba(0,240,255,0.15);
-  margin-bottom: 20px;
-}
-#permission-gate p {
-  font-size: 12px; color: var(--cyan-dim);
-  letter-spacing: 1.5px; margin-bottom: 30px;
-  text-align: center; max-width: 400px; line-height: 1.6;
-}
+/* TOP RIGHT */
+#tr{position:fixed;top:14px;right:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.sbr{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.sbl{font-size:9px;letter-spacing:2px;color:var(--cd);width:44px;text-align:right;text-transform:uppercase}
+.sbt{width:120px;height:8px;background:rgba(0,240,255,.08);border:1px solid var(--pbo);overflow:hidden}
+.sbf{height:100%;background:linear-gradient(90deg,var(--cd),var(--c));box-shadow:0 0 8px var(--cg);transition:width .5s}
+.sbf.wa{background:linear-gradient(90deg,var(--o),var(--y))}
+.sbf.cr{background:linear-gradient(90deg,var(--r),var(--o))}
+.sbv{font-family:var(--fd);font-size:11px;font-weight:500;width:36px;text-align:right}
+#wp{min-width:180px}
+.wt{font-family:var(--fd);font-size:28px;font-weight:700;text-shadow:0 0 12px var(--cg)}
+.wc{font-size:11px;color:var(--c);letter-spacing:1px;margin-bottom:6px}
+.wd{font-size:10px;color:var(--cd);line-height:1.7;letter-spacing:.5px}
 
-#activate-btn {
-  font-family: var(--font-display);
-  font-size: 14px; letter-spacing: 4px;
-  color: var(--cyan); background: transparent;
-  border: 2px solid var(--cyan);
-  padding: 16px 40px; cursor: pointer;
-  text-transform: uppercase;
-  box-shadow: 0 0 20px var(--cyan-glow), inset 0 0 20px rgba(0,240,255,0.05);
-  transition: all 0.3s;
-  position: relative; overflow: hidden;
-}
-#activate-btn:hover, #activate-btn:active {
-  background: rgba(0,240,255,0.15);
-  box-shadow: 0 0 40px var(--cyan-glow), inset 0 0 30px rgba(0,240,255,0.1);
-}
-#activate-btn::before {
-  content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(0,240,255,0.2), transparent);
-  animation: btn-sweep 2s infinite;
-}
-@keyframes btn-sweep { to { left: 100%; } }
+/* HORIZON */
+#hc{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(700px,90vw);height:2px;z-index:30;pointer-events:none}
+#hl{width:100%;height:100%;position:relative;transition:transform .15s linear}
+#hl::before,#hl::after{content:'';position:absolute;top:0;height:1px;background:var(--cd);opacity:.4}
+#hl::before{left:0;width:35%}
+#hl::after{right:0;width:35%}
+.hm{position:absolute;top:50%;transform:translateY(-50%);font-size:8px;color:var(--cd);letter-spacing:1px}
+.hm.le{left:36%}
+.hm.ri{right:36%;text-align:right}
+#ret{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;z-index:31}
+#ret svg{width:100%;height:100%;filter:drop-shadow(0 0 6px var(--cg))}
 
-#perm-status {
-  margin-top: 20px; font-size: 10px;
-  color: var(--cyan-dim); letter-spacing: 1px;
-  text-align: center; max-width: 350px;
-  line-height: 1.8;
-}
-.perm-line { display: flex; justify-content: space-between; gap: 20px; }
-.perm-ok { color: var(--green); }
-.perm-fail { color: var(--red); }
-.perm-wait { color: var(--yellow); }
+/* BOTTOM LEFT */
+#bl{position:fixed;bottom:18px;left:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.tht{width:160px;height:12px;background:rgba(0,240,255,.06);border:1px solid var(--pbo);overflow:hidden;margin-top:4px}
+.thf{height:100%;background:linear-gradient(90deg,var(--g),var(--y),var(--o),var(--r));transition:width .3s}
+.thtx{font-family:var(--fd);font-size:11px;font-weight:700;margin-top:3px;letter-spacing:2px}
+.cl{font-size:12px;letter-spacing:1px;line-height:1.6}
 
-/* ── HUD ── */
-#hud {
-  position: fixed; inset: 0;
-  opacity: 0; transition: opacity 0.8s ease;
-  pointer-events: none;
-}
-#hud.active { opacity: 1; }
-#hud > * { pointer-events: auto; }
+/* BOTTOM CENTER */
+#bc{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);text-align:center;z-index:50}
+#hcar{font-family:var(--fd);font-size:22px;font-weight:900;letter-spacing:4px;text-shadow:0 0 15px var(--cg)}
+#hdeg{font-size:12px;color:var(--cd);letter-spacing:2px}
 
-/* ── PANEL BASE ── */
-.panel {
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  padding: 10px 14px; position: relative;
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-}
-.panel::before {
-  content: ''; position: absolute; top: -1px; left: -1px; right: -1px; bottom: -1px;
-  box-shadow: 0 0 15px rgba(0,240,255,0.08), inset 0 0 15px rgba(0,240,255,0.03);
-  pointer-events: none;
-}
-.panel-title {
-  font-family: var(--font-display);
-  font-size: 9px; letter-spacing: 3px;
-  text-transform: uppercase; color: var(--cyan-dim);
-  margin-bottom: 6px;
-  display: flex; align-items: center; gap: 6px;
-}
-.panel-title::before {
-  content: '\25C6'; font-size: 6px; color: var(--cyan);
-  animation: pulse-diamond 2s infinite;
-}
-@keyframes pulse-diamond { 0%,100%{opacity:1} 50%{opacity:0.3} }
+/* MINIMAP */
+#br{position:fixed;bottom:18px;right:18px;z-index:50}
+#mmc{width:200px;height:200px;border:1px solid var(--pbo);position:relative;overflow:hidden;background:var(--pb)}
+#mmc canvas{width:100%;height:100%;filter:invert(1) hue-rotate(180deg) brightness(.7) contrast(1.3) sepia(.3)}
+#mmo{position:absolute;inset:0;pointer-events:auto;z-index:2}
+#mmd{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:10px;height:10px;z-index:3;pointer-events:none}
+#mmd::before{content:'';position:absolute;inset:0;background:var(--c);border-radius:50%;animation:pdot 1.5s infinite}
+#mmd::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:3px;height:3px;background:#fff;border-radius:50%}
+@keyframes pdot{0%{box-shadow:0 0 0 0 var(--cg);opacity:1}100%{box-shadow:0 0 0 14px transparent;opacity:.6}}
+#mma{position:absolute;top:50%;left:50%;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:14px solid var(--c);filter:drop-shadow(0 0 4px var(--cg));transform-origin:center bottom;z-index:4;pointer-events:none;margin-top:-22px;margin-left:-5px}
 
-.label { font-size: 9px; letter-spacing: 1.5px; color: var(--cyan-dim); text-transform: uppercase; }
+/* WAYPOINTS */
+#wps{position:fixed;top:50%;left:18px;transform:translateY(-50%);max-height:300px;overflow-y:auto;z-index:50;display:none}
+#wps.has{display:block}
+.wi{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(0,240,255,.1);font-size:10px}
 
-/* ── COMPASS ── */
-#compass-bar {
-  position: fixed; top: 14px;
-  left: 50%; transform: translateX(-50%);
-  width: min(600px, 80vw); z-index: 50;
-}
-#compass-strip-container {
-  width: 100%; height: 36px; overflow: hidden;
-  position: relative;
-  border-bottom: 1px solid var(--panel-border);
-  background: var(--panel-bg); backdrop-filter: blur(4px);
-}
-#compass-strip {
-  position: absolute; top: 0; left: 0; height: 100%;
-  white-space: nowrap; display: flex; align-items: center;
-  font-family: var(--font-display); font-size: 11px; letter-spacing: 2px;
-  transition: transform 0.15s linear;
-}
-.compass-tick { display: inline-flex; flex-direction: column; align-items: center; width: 40px; flex-shrink: 0; }
-.compass-tick .tick-line { width: 1px; height: 10px; background: var(--cyan-dim); margin-bottom: 2px; }
-.compass-tick.cardinal .tick-line { height: 16px; background: var(--cyan); box-shadow: 0 0 6px var(--cyan-glow); }
-.compass-tick.cardinal .tick-label { font-size: 13px; font-weight: 700; color: var(--cyan); text-shadow: 0 0 8px var(--cyan-glow); }
-.compass-tick .tick-label { font-size: 9px; color: var(--cyan-dim); }
-#compass-center-pin {
-  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-  width: 2px; height: 100%; background: var(--cyan);
-  box-shadow: 0 0 8px var(--cyan-glow); z-index: 2;
-}
-#compass-center-pin::after {
-  content: '\25BC'; position: absolute;
-  bottom: -2px; left: 50%; transform: translateX(-50%);
-  font-size: 10px; color: var(--cyan); text-shadow: 0 0 8px var(--cyan-glow);
-}
-#compass-heading-readout {
-  text-align: center; font-family: var(--font-display);
-  font-size: 14px; font-weight: 700; padding: 4px 0;
-  letter-spacing: 3px; text-shadow: 0 0 10px var(--cyan-glow);
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border); border-top: none;
-}
+/* DEBUG */
+#dbg{position:fixed;top:50%;right:18px;transform:translateY(-50%);font-size:9px;color:var(--cd);text-align:right;line-height:1.6;z-index:50;background:var(--pb);border:1px solid var(--pbo);padding:8px 12px}
 
-/* ── TOP LEFT ── */
-#top-left {
-  position: fixed; top: 14px; left: 18px;
-  display: flex; flex-direction: column; gap: 8px; z-index: 50;
-}
-#clock-panel .time {
-  font-family: var(--font-display); font-size: 28px; font-weight: 900;
-  letter-spacing: 2px; text-shadow: 0 0 15px var(--cyan-glow);
-}
-#clock-panel .date { font-size: 11px; color: var(--cyan-dim); letter-spacing: 2px; }
-#speed-panel .speed-value {
-  font-family: var(--font-display); font-size: 36px; font-weight: 900;
-  letter-spacing: 1px; text-shadow: 0 0 20px var(--cyan-glow);
-}
-#speed-panel .speed-unit {
-  font-family: var(--font-display); font-size: 10px;
-  letter-spacing: 3px; color: var(--cyan-dim); margin-left: 4px;
-}
-#gforce-panel .gforce-value {
-  font-family: var(--font-display); font-size: 22px; font-weight: 700;
-  text-shadow: 0 0 10px var(--cyan-glow);
-}
-
-/* ── TOP RIGHT ── */
-#top-right {
-  position: fixed; top: 14px; right: 18px;
-  display: flex; flex-direction: column; gap: 8px; z-index: 50;
-}
-.stat-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.stat-bar-label { font-size: 9px; letter-spacing: 2px; color: var(--cyan-dim); width: 44px; text-align: right; text-transform: uppercase; }
-.stat-bar-track { width: 120px; height: 8px; background: rgba(0,240,255,0.08); border: 1px solid var(--panel-border); overflow: hidden; }
-.stat-bar-fill { height: 100%; background: linear-gradient(90deg, var(--cyan-dim), var(--cyan)); box-shadow: 0 0 8px var(--cyan-glow); transition: width 0.5s ease; }
-.stat-bar-fill.warning { background: linear-gradient(90deg, var(--orange), var(--yellow)); }
-.stat-bar-fill.critical { background: linear-gradient(90deg, var(--red), var(--orange)); }
-.stat-bar-value { font-family: var(--font-display); font-size: 11px; font-weight: 500; width: 36px; text-align: right; }
-
-/* ── WEATHER ── */
-#weather-panel { min-width: 180px; }
-#weather-panel .weather-temp { font-family: var(--font-display); font-size: 28px; font-weight: 700; text-shadow: 0 0 12px var(--cyan-glow); }
-#weather-panel .weather-condition { font-size: 11px; color: var(--cyan); letter-spacing: 1px; margin-bottom: 6px; }
-#weather-panel .weather-detail { font-size: 10px; color: var(--cyan-dim); line-height: 1.7; letter-spacing: 0.5px; }
-
-/* ── HORIZON + RETICLE ── */
-#horizon-container {
-  position: fixed; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(700px, 90vw); height: 2px;
-  z-index: 30; pointer-events: none;
-}
-#horizon-line { width: 100%; height: 100%; position: relative; transition: transform 0.15s linear; }
-#horizon-line::before, #horizon-line::after {
-  content: ''; position: absolute; top: 0; height: 1px;
-  background: var(--cyan-dim); opacity: 0.4;
-}
-#horizon-line::before { left: 0; width: 35%; }
-#horizon-line::after { right: 0; width: 35%; }
-.horizon-mark { position: absolute; top: 50%; transform: translateY(-50%); font-size: 8px; color: var(--cyan-dim); letter-spacing: 1px; }
-.horizon-mark.left { left: 36%; }
-.horizon-mark.right { right: 36%; text-align: right; }
-#reticle { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 30px; height: 30px; z-index: 31; }
-#reticle svg { width: 100%; height: 100%; filter: drop-shadow(0 0 6px var(--cyan-glow)); }
-
-/* ── BOTTOM LEFT ── */
-#bottom-left {
-  position: fixed; bottom: 18px; left: 18px;
-  display: flex; flex-direction: column; gap: 8px; z-index: 50;
-}
-#threat-panel .threat-track { width: 160px; height: 12px; background: rgba(0,240,255,0.06); border: 1px solid var(--panel-border); overflow: hidden; margin-top: 4px; }
-#threat-panel .threat-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--yellow), var(--orange), var(--red)); transition: width 0.3s ease; }
-#threat-panel .threat-level-text { font-family: var(--font-display); font-size: 11px; font-weight: 700; margin-top: 3px; letter-spacing: 2px; }
-#coords-panel .coord-line { font-size: 12px; letter-spacing: 1px; line-height: 1.6; }
-
-/* ── BOTTOM CENTER ── */
-#bottom-center {
-  position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-  text-align: center; z-index: 50;
-}
-#heading-cardinal { font-family: var(--font-display); font-size: 22px; font-weight: 900; letter-spacing: 4px; text-shadow: 0 0 15px var(--cyan-glow); }
-#heading-degrees { font-size: 12px; color: var(--cyan-dim); letter-spacing: 2px; }
-
-/* ── MINIMAP ── */
-#bottom-right {
-  position: fixed; bottom: 18px; right: 18px;
-  display: flex; flex-direction: column; gap: 8px; z-index: 50;
-}
-#minimap-container {
-  width: 200px; height: 200px;
-  border: 1px solid var(--panel-border);
-  position: relative; overflow: hidden; background: var(--panel-bg);
-}
-#minimap-canvas { width: 100%; height: 100%; filter: invert(1) hue-rotate(180deg) brightness(0.7) contrast(1.3) sepia(0.3); }
-#minimap-overlay { position: absolute; inset: 0; pointer-events: auto; z-index: 2; }
-#minimap-dot {
-  position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%,-50%);
-  width: 10px; height: 10px; z-index: 3; pointer-events: none;
-}
-#minimap-dot::before {
-  content: ''; position: absolute; inset: 0;
-  background: var(--cyan); border-radius: 50%;
-  animation: pulse-dot 1.5s infinite;
-}
-#minimap-dot::after {
-  content: ''; position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%,-50%);
-  width: 3px; height: 3px; background: #fff; border-radius: 50%;
-}
-@keyframes pulse-dot { 0%{box-shadow:0 0 0 0 var(--cyan-glow);opacity:1} 100%{box-shadow:0 0 0 14px transparent;opacity:0.6} }
-#minimap-arrow {
-  position: absolute; top: 50%; left: 50%;
-  width: 0; height: 0;
-  border-left: 5px solid transparent; border-right: 5px solid transparent;
-  border-bottom: 14px solid var(--cyan);
-  filter: drop-shadow(0 0 4px var(--cyan-glow));
-  transform-origin: center bottom; z-index: 4; pointer-events: none;
-  margin-top: -22px; margin-left: -5px;
-}
-
-/* ── WAYPOINTS ── */
-#waypoint-sidebar {
-  position: fixed; top: 50%; left: 18px;
-  transform: translateY(-50%);
-  max-height: 300px; overflow-y: auto;
-  z-index: 50; display: none;
-}
-#waypoint-sidebar.has-waypoints { display: block; }
-.waypoint-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(0,240,255,0.1); font-size: 10px; }
-.waypoint-item .wp-icon { color: var(--cyan); font-size: 12px; }
-.waypoint-item .wp-name { font-family: var(--font-display); font-size: 10px; color: var(--cyan); letter-spacing: 1px; }
-.waypoint-item .wp-dist { font-family: var(--font-display); font-size: 11px; color: var(--cyan); }
-.waypoint-item .wp-bearing { color: var(--cyan-dim); font-size: 9px; }
-.waypoint-item .wp-remove { cursor: pointer; color: var(--red); font-size: 10px; opacity: 0.6; margin-left: auto; }
-.waypoint-item .wp-remove:hover { opacity: 1; }
-
-/* ── BOOT LOG ── */
-#boot-screen {
-  position: fixed; inset: 0; z-index: 15000;
-  background: rgba(0,4,8,0.95);
-  display: flex; flex-direction: column;
-  justify-content: center; align-items: center;
-  transition: opacity 0.6s ease;
-  pointer-events: none;
-}
-#boot-screen.done { opacity: 0; }
-#boot-logo {
-  font-family: var(--font-display);
-  font-size: 32px; font-weight: 900;
-  letter-spacing: 10px;
-  text-shadow: 0 0 30px var(--cyan-glow);
-  margin-bottom: 30px;
-}
-#boot-log {
-  font-family: var(--font-mono);
-  font-size: 11px; color: var(--cyan-dim);
-  line-height: 1.8; letter-spacing: 1px;
-  max-width: 500px; width: 90%;
-}
-#boot-log .line { opacity: 0; transform: translateY(4px); transition: all 0.3s ease; }
-#boot-log .line.visible { opacity: 1; transform: translateY(0); }
-#boot-log .line .status { float: right; }
-#boot-log .line .status.ok { color: var(--green); }
-#boot-log .line .status.warn { color: var(--yellow); }
-
-/* ── SENSOR DEBUG ── */
-#sensor-debug {
-  position: fixed; top: 50%; right: 18px;
-  transform: translateY(-50%);
-  font-size: 9px; color: var(--cyan-dim);
-  letter-spacing: 0.5px; text-align: right;
-  line-height: 1.6; z-index: 50;
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-border);
-  padding: 8px 12px;
-}
-
-@media (max-width: 600px) {
-  #clock-panel .time { font-size: 20px; }
-  #speed-panel .speed-value { font-size: 26px; }
-  #minimap-container { width: 140px; height: 140px; }
-  .stat-bar-track { width: 80px; }
-  #compass-bar { width: 90vw; }
+@media(max-width:600px){
+.time{font-size:20px}.sv{font-size:26px}#mmc{width:140px;height:140px}.sbt{width:80px}#cbar{width:90vw}
 }
 </style>
 </head>
 <body>
-
 <div id="scanlines"></div>
-<div class="corner-bracket tl"></div>
-<div class="corner-bracket tr"></div>
-<div class="corner-bracket bl"></div>
-<div class="corner-bracket br"></div>
+<div class="cb tl"></div><div class="cb tr"></div><div class="cb bl"></div><div class="cb br"></div>
 
-<!-- ── PERMISSION GATE ── -->
-<div id="permission-gate">
-  <h1>J.A.R.V.I.S.</h1>
-  <p>TAP BELOW TO INITIALIZE ALL SENSOR SYSTEMS.<br>ACCEPT EVERY PERMISSION PROMPT THAT APPEARS.</p>
-  <button id="activate-btn">ACTIVATE HUD</button>
-  <div id="perm-status"></div>
-</div>
+<div id="boot"><h1>J.A.R.V.I.S.</h1><div id="blog"></div></div>
 
-<!-- ── BOOT SCREEN ── -->
-<div id="boot-screen" style="display:none;">
-  <div id="boot-logo">J.A.R.V.I.S.</div>
-  <div id="boot-log"></div>
-</div>
-
-<!-- ── HUD ── -->
 <div id="hud">
-  <!-- COMPASS -->
-  <div id="compass-bar">
-    <div id="compass-strip-container">
-      <div id="compass-center-pin"></div>
-      <div id="compass-strip"></div>
-    </div>
-    <div id="compass-heading-readout">---&deg;</div>
+  <div id="cbar"><div id="csc"><div id="cpin"></div><div id="cs"></div></div><div id="chr">---&deg;</div></div>
+  <div id="tl">
+    <div class="p" id="clkp"><div class="pt">System Time</div><div class="time" id="clk">--:--:--</div><div class="date" id="dte">----</div></div>
+    <div class="p"><div class="pt">Velocity</div><div><span class="sv" id="spd">0</span><span class="su">KM/H</span></div></div>
+    <div class="p"><div class="pt">G-Force</div><div class="gv" id="gf">1.00<span class="label" style="margin-left:4px">G</span></div></div>
   </div>
-
-  <!-- TOP LEFT -->
-  <div id="top-left">
-    <div id="clock-panel" class="panel">
-      <div class="panel-title">System Time</div>
-      <div class="time" id="clock-time">--:--:--</div>
-      <div class="date" id="clock-date">----/--/--</div>
+  <div id="tr">
+    <div class="p">
+      <div class="pt">System Status</div>
+      <div class="sbr"><span class="sbl">BAT</span><div class="sbt"><div class="sbf" id="bb" style="width:85%"></div></div><span class="sbv" id="vb">85%</span></div>
+      <div class="sbr"><span class="sbl">SIG</span><div class="sbt"><div class="sbf" id="bs" style="width:72%"></div></div><span class="sbv" id="vs">72%</span></div>
+      <div class="sbr"><span class="sbl">CPU</span><div class="sbt"><div class="sbf" id="bcp" style="width:34%"></div></div><span class="sbv" id="vc">34%</span></div>
+      <div class="sbr"><span class="sbl">MEM</span><div class="sbt"><div class="sbf" id="bm" style="width:58%"></div></div><span class="sbv" id="vm">58%</span></div>
     </div>
-    <div id="speed-panel" class="panel">
-      <div class="panel-title">Velocity</div>
-      <div><span class="speed-value" id="speed-val">0</span><span class="speed-unit">KM/H</span></div>
-    </div>
-    <div id="gforce-panel" class="panel">
-      <div class="panel-title">G-Force</div>
-      <div class="gforce-value" id="gforce-val">1.00<span class="label" style="margin-left:4px">G</span></div>
-    </div>
+    <div class="p" id="wp"><div class="pt">Weather</div><div class="wt" id="wxt">--&deg;C</div><div class="wc" id="wxc">STANDBY</div><div class="wd" id="wxd">WIND: --<br>HUMIDITY: --%<br>SUNRISE: --:--<br>SUNSET: --:--</div></div>
   </div>
-
-  <!-- TOP RIGHT -->
-  <div id="top-right">
-    <div id="stats-panel" class="panel">
-      <div class="panel-title">System Status</div>
-      <div class="stat-bar-row"><span class="stat-bar-label">BAT</span><div class="stat-bar-track"><div class="stat-bar-fill" id="bar-battery" style="width:85%"></div></div><span class="stat-bar-value" id="val-battery">85%</span></div>
-      <div class="stat-bar-row"><span class="stat-bar-label">SIG</span><div class="stat-bar-track"><div class="stat-bar-fill" id="bar-signal" style="width:72%"></div></div><span class="stat-bar-value" id="val-signal">72%</span></div>
-      <div class="stat-bar-row"><span class="stat-bar-label">CPU</span><div class="stat-bar-track"><div class="stat-bar-fill" id="bar-cpu" style="width:34%"></div></div><span class="stat-bar-value" id="val-cpu">34%</span></div>
-      <div class="stat-bar-row"><span class="stat-bar-label">MEM</span><div class="stat-bar-track"><div class="stat-bar-fill" id="bar-memory" style="width:58%"></div></div><span class="stat-bar-value" id="val-memory">58%</span></div>
-    </div>
-    <div id="weather-panel" class="panel">
-      <div class="panel-title">Weather</div>
-      <div class="weather-temp" id="wx-temp">--&deg;C</div>
-      <div class="weather-condition" id="wx-cond">STANDBY</div>
-      <div class="weather-detail" id="wx-details">WIND: --<br>HUMIDITY: --%<br>SUNRISE: --:--<br>SUNSET: --:--</div>
-    </div>
+  <div id="hc"><div id="hl"><span class="hm le">&mdash; 0&deg;</span><span class="hm ri">0&deg; &mdash;</span></div><div id="ret"><svg viewBox="0 0 30 30" fill="none"><path d="M15 3L21 15L15 27L9 15Z" stroke="var(--c)" stroke-width="1.2" fill="none"/><line x1="15" y1="0" x2="15" y2="6" stroke="var(--c)" stroke-width=".8"/><line x1="15" y1="24" x2="15" y2="30" stroke="var(--c)" stroke-width=".8"/><line x1="0" y1="15" x2="6" y2="15" stroke="var(--c)" stroke-width=".8"/><line x1="24" y1="15" x2="30" y2="15" stroke="var(--c)" stroke-width=".8"/></svg></div></div>
+  <div id="bl">
+    <div class="p"><div class="pt">Threat Assessment</div><div class="thtx" id="thtx" style="color:var(--g)">NOMINAL</div><div class="tht"><div class="thf" id="thf" style="width:8%"></div></div></div>
+    <div class="p"><div class="pt">Position</div><div class="cl" id="clat">LAT  ---.------</div><div class="cl" id="clon">LON  ---.------</div><div class="cl" id="calt">ALT  ---m</div></div>
   </div>
-
-  <!-- HORIZON -->
-  <div id="horizon-container">
-    <div id="horizon-line">
-      <span class="horizon-mark left">&mdash; 0&deg;</span>
-      <span class="horizon-mark right">0&deg; &mdash;</span>
-    </div>
-    <div id="reticle">
-      <svg viewBox="0 0 30 30" fill="none"><path d="M15 3L21 15L15 27L9 15Z" stroke="var(--cyan)" stroke-width="1.2" fill="none"/><line x1="15" y1="0" x2="15" y2="6" stroke="var(--cyan)" stroke-width="0.8"/><line x1="15" y1="24" x2="15" y2="30" stroke="var(--cyan)" stroke-width="0.8"/><line x1="0" y1="15" x2="6" y2="15" stroke="var(--cyan)" stroke-width="0.8"/><line x1="24" y1="15" x2="30" y2="15" stroke="var(--cyan)" stroke-width="0.8"/></svg>
-    </div>
-  </div>
-
-  <!-- BOTTOM LEFT -->
-  <div id="bottom-left">
-    <div id="threat-panel" class="panel">
-      <div class="panel-title">Threat Assessment</div>
-      <div class="threat-level-text" id="threat-text" style="color:var(--green)">NOMINAL</div>
-      <div class="threat-track"><div class="threat-fill" id="threat-fill" style="width:8%"></div></div>
-    </div>
-    <div id="coords-panel" class="panel">
-      <div class="panel-title">Position</div>
-      <div class="coord-line" id="coord-lat">LAT  ---.------</div>
-      <div class="coord-line" id="coord-lon">LON  ---.------</div>
-      <div class="coord-line" id="coord-alt">ALT  ---m</div>
-    </div>
-  </div>
-
-  <!-- BOTTOM CENTER -->
-  <div id="bottom-center" class="panel">
-    <div id="heading-cardinal">---</div>
-    <div id="heading-degrees">---&deg;</div>
-  </div>
-
-  <!-- BOTTOM RIGHT -->
-  <div id="bottom-right">
-    <div id="minimap-container">
-      <canvas id="minimap-canvas" width="400" height="400"></canvas>
-      <div id="minimap-dot"></div>
-      <div id="minimap-arrow"></div>
-      <div id="minimap-overlay"></div>
-    </div>
-  </div>
-
-  <!-- WAYPOINTS -->
-  <div id="waypoint-sidebar" class="panel">
-    <div class="panel-title">Waypoints</div>
-    <div id="waypoint-list"></div>
-  </div>
-
-  <!-- SENSOR DEBUG -->
-  <div id="sensor-debug">SENSORS: INITIALIZING</div>
+  <div id="bc" class="p"><div id="hcar">---</div><div id="hdeg">---&deg;</div></div>
+  <div id="br"><div id="mmc"><canvas id="mcan" width="400" height="400"></canvas><div id="mmd"></div><div id="mma"></div><div id="mmo"></div></div></div>
+  <div id="wps" class="p"><div class="pt">Waypoints</div><div id="wpl"></div></div>
+  <div id="dbg">BOOT</div>
 </div>
 
 <script>
-// =====================================================
-// J.A.R.V.I.S. HUD v2 — EXPLICIT SENSOR PERMISSIONS
-// No WebXR — pure sensor APIs + GPS
-// =====================================================
-
-var S = {
-  heading: 0, pitch: 0, roll: 0,
-  lat: 0, lon: 0, alt: 0,
-  speed: 0, gforce: 1.0, gforceSmooth: 1.0,
-  battery: 85, signal: 72, cpu: 34, memory: 58,
-  waypoints: [],
-  hasGPS: false, hasOrientation: false, hasMotion: false,
-  mapTiles: {}, weatherData: null,
-  sensorStatus: {}
+var S={
+  hdg:0,pit:0,rol:0,lat:0,lon:0,alt:0,spd:0,
+  gf:1,gfs:1,bat:85,sig:72,cpu:34,mem:58,
+  wps:[],hasGPS:false,hasOri:false,hasMot:false,
+  tiles:{},wx:null,sensorTapped:false
 };
 
-// ── PERMISSION REQUEST (from user gesture) ──
-document.getElementById('activate-btn').addEventListener('click', function() {
-  var statusEl = document.getElementById('perm-status');
-  statusEl.innerHTML = '<div class="perm-wait">REQUESTING PERMISSIONS...</div>';
-
-  var results = {};
-  var promises = [];
-
-  // 1. GPS
-  promises.push(new Promise(function(resolve) {
-    if (!navigator.geolocation) {
-      results.gps = false; resolve(); return;
+// ═══ BOOT SEQUENCE ═══
+(function(){
+  var log=document.getElementById('blog');
+  var lines=[
+    {t:'INITIALIZING J.A.R.V.I.S. CORE v8.1',s:null},
+    {t:'NEURAL INTERFACE',s:'ok',l:'ONLINE'},
+    {t:'IP GEOLOCATION MODULE',s:'ok',l:'LOADING'},
+    {t:'ORIENTATION ARRAY',s:'ok',l:'STANDBY'},
+    {t:'ACCELEROMETER',s:'ok',l:'STANDBY'},
+    {t:'WEATHER TELEMETRY',s:'ok',l:'QUEUED'},
+    {t:'MAPPING SUBSYSTEM',s:'ok',l:'READY'},
+    {t:'THREAT MATRIX',s:'ok',l:'NOMINAL'},
+    {t:'ALL SYSTEMS OPERATIONAL',s:'ok',l:'GO'},
+  ];
+  var i=0;
+  function next(){
+    if(i>=lines.length){
+      setTimeout(function(){
+        document.getElementById('boot').classList.add('done');
+        setTimeout(function(){
+          document.getElementById('hud').classList.add('on');
+          startAll();
+        },400);
+      },500);
+      return;
     }
-    navigator.geolocation.getCurrentPosition(
-      function(pos) { results.gps = true; resolve(); },
-      function(err) { results.gps = false; resolve(); },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  }));
+    var d=document.createElement('div');d.className='l';
+    var h='> '+lines[i].t;
+    if(lines[i].s)h+=' <span class="s '+lines[i].s+'">['+lines[i].l+']</span>';
+    d.innerHTML=h;log.appendChild(d);
+    setTimeout(function(){d.classList.add('v');i++;setTimeout(next,80+Math.random()*120);},30);
+  }
+  next();
+})();
 
-  // 2. DeviceOrientation (iOS requires permission from gesture)
-  promises.push(new Promise(function(resolve) {
-    if (typeof DeviceOrientationEvent !== 'undefined' &&
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission().then(function(state) {
-        results.orientation = (state === 'granted');
-        resolve();
-      }).catch(function() { results.orientation = false; resolve(); });
-    } else if ('DeviceOrientationEvent' in window) {
-      // Android/Quest — no permission needed, just check if events fire
-      results.orientation = true;
-      resolve();
-    } else {
-      results.orientation = false; resolve();
-    }
-  }));
-
-  // 3. DeviceMotion (iOS requires permission from gesture)
-  promises.push(new Promise(function(resolve) {
-    if (typeof DeviceMotionEvent !== 'undefined' &&
-        typeof DeviceMotionEvent.requestPermission === 'function') {
-      DeviceMotionEvent.requestPermission().then(function(state) {
-        results.motion = (state === 'granted');
-        resolve();
-      }).catch(function() { results.motion = false; resolve(); });
-    } else if ('DeviceMotionEvent' in window) {
-      results.motion = true;
-      resolve();
-    } else {
-      results.motion = false; resolve();
-    }
-  }));
-
-  // 4. Try Generic Sensor API (AbsoluteOrientationSensor)
-  promises.push(new Promise(function(resolve) {
-    if ('AbsoluteOrientationSensor' in window) {
-      try {
-        navigator.permissions.query({ name: 'accelerometer' }).then(function(r) {
-          results.genericSensor = (r.state === 'granted' || r.state === 'prompt');
-          resolve();
-        }).catch(function() { results.genericSensor = false; resolve(); });
-      } catch(e) { results.genericSensor = false; resolve(); }
-    } else {
-      results.genericSensor = false; resolve();
-    }
-  }));
-
-  Promise.all(promises).then(function() {
-    S.sensorStatus = results;
-    var html = '';
-    html += '<div class="perm-line"><span>GPS</span><span class="' + (results.gps ? 'perm-ok' : 'perm-fail') + '">[' + (results.gps ? 'GRANTED' : 'DENIED') + ']</span></div>';
-    html += '<div class="perm-line"><span>ORIENTATION</span><span class="' + (results.orientation ? 'perm-ok' : 'perm-fail') + '">[' + (results.orientation ? 'GRANTED' : 'DENIED') + ']</span></div>';
-    html += '<div class="perm-line"><span>MOTION</span><span class="' + (results.motion ? 'perm-ok' : 'perm-fail') + '">[' + (results.motion ? 'GRANTED' : 'DENIED') + ']</span></div>';
-    html += '<div class="perm-line"><span>SENSOR API</span><span class="' + (results.genericSensor ? 'perm-ok' : 'perm-fail') + '">[' + (results.genericSensor ? 'AVAILABLE' : 'N/A') + ']</span></div>';
-    statusEl.innerHTML = html;
-
-    // Start after short delay
-    setTimeout(function() {
-      document.getElementById('permission-gate').classList.add('done');
-      startHUD(results);
-    }, 1200);
-  });
-});
-
-// ── START HUD ──
-function startHUD(perms) {
-  buildCompassStrip();
-  runBootSequence(perms, function() {
-    // After boot, init everything
-    if (perms.gps) initGPS();
-    initOrientationListeners(perms);
-    initMotionListeners(perms);
-    if (perms.genericSensor) initGenericSensors();
-    initBattery();
-    mainLoop();
-    setInterval(refreshStatBars, 2000);
-    setInterval(function() { if (S.hasGPS) updateMinimap(); }, 3000);
-    setInterval(fetchWeather, 300000);
-
-    // Desktop fallback simulation
-    setInterval(function() {
-      if (!S.hasOrientation && !S.hasMotion) {
-        S.heading = (S.heading + 0.3) % 360;
+// ═══ GET LOCATION VIA IP (no permissions needed) ═══
+function getLocationByIP(){
+  // Try multiple IP geolocation services as fallbacks
+  fetch('https://ipapi.co/json/')
+    .then(function(r){return r.json()})
+    .then(function(d){
+      if(d.latitude&&d.longitude){
+        S.lat=d.latitude;S.lon=d.longitude;S.alt=0;
+        S.hasGPS=true;
+        updatePos();updateMap();fetchWeather();
+        updDbg();
       }
-      if (!S.hasGPS) {
-        S.lat = 46.5197; S.lon = 6.6323; S.alt = 495;
-        S.hasGPS = true;
-        updateGPSDisplay(); updateMinimap();
-        if (!S.weatherData) fetchWeather();
-      }
-    }, 100);
-  });
+    })
+    .catch(function(){
+      // Fallback service
+      fetch('https://ip-api.com/json/?fields=lat,lon')
+        .then(function(r){return r.json()})
+        .then(function(d){
+          if(d.lat&&d.lon){
+            S.lat=d.lat;S.lon=d.lon;S.alt=0;
+            S.hasGPS=true;
+            updatePos();updateMap();fetchWeather();
+            updDbg();
+          }
+        })
+        .catch(function(){
+          // Last resort: use a default location
+          S.lat=46.5197;S.lon=6.6323;S.alt=495;
+          S.hasGPS=true;
+          updatePos();updateMap();fetchWeather();
+          updDbg();
+        });
+    });
 }
 
-// ── ORIENTATION LISTENERS ──
-function initOrientationListeners(perms) {
-  // Method 1: Standard deviceorientation
-  window.addEventListener('deviceorientation', function(e) {
-    if (e.alpha === null && e.beta === null && e.gamma === null) return;
-    S.hasOrientation = true;
-
-    if (e.webkitCompassHeading !== undefined) {
-      S.heading = e.webkitCompassHeading;
-    } else if (e.alpha !== null) {
-      // alpha is compass heading on Android (but measured differently)
-      // absolute orientation gives true north
-      if (e.absolute) {
-        S.heading = (360 - e.alpha) % 360;
-      } else {
-        S.heading = (360 - e.alpha) % 360;
-      }
-    }
-    if (e.beta !== null) S.pitch = e.beta;
-    if (e.gamma !== null) S.roll = e.gamma;
-
-    updateDebug();
-  }, true);
-
-  // Method 2: deviceorientationabsolute (Chrome/Android — gives true north)
-  window.addEventListener('deviceorientationabsolute', function(e) {
-    if (e.alpha === null) return;
-    S.hasOrientation = true;
-    S.heading = (360 - e.alpha) % 360;
-    if (e.beta !== null) S.pitch = e.beta;
-    if (e.gamma !== null) S.roll = e.gamma;
-    updateDebug();
-  }, true);
-}
-
-// ── MOTION LISTENERS ──
-function initMotionListeners(perms) {
-  window.addEventListener('devicemotion', function(e) {
-    var a = e.accelerationIncludingGravity;
-    if (!a || (a.x === null && a.y === null && a.z === null)) return;
-    S.hasMotion = true;
-    var total = Math.sqrt((a.x||0)*(a.x||0) + (a.y||0)*(a.y||0) + (a.z||0)*(a.z||0));
-    S.gforce = total / 9.81;
-    updateDebug();
-  }, true);
-}
-
-// ── GENERIC SENSOR API (AbsoluteOrientationSensor / Accelerometer) ──
-function initGenericSensors() {
-  try {
-    if ('AbsoluteOrientationSensor' in window) {
-      var orient = new AbsoluteOrientationSensor({ frequency: 30, referenceFrame: 'device' });
-      orient.addEventListener('reading', function() {
-        var q = orient.quaternion; // [x, y, z, w]
-        if (!q) return;
-        S.hasOrientation = true;
-        // Convert quaternion to euler
-        var x = q[0], y = q[1], z = q[2], w = q[3];
-        // Yaw
-        var siny = 2 * (w * z + x * y);
-        var cosy = 1 - 2 * (y * y + z * z);
-        var yaw = Math.atan2(siny, cosy) * 180 / Math.PI;
-        S.heading = (yaw + 360) % 360;
-        // Pitch
-        var sinp = 2 * (w * y - z * x);
-        S.pitch = (Math.abs(sinp) >= 1) ? (90 * Math.sign(sinp)) : (Math.asin(sinp) * 180 / Math.PI);
-        // Roll
-        var sinr = 2 * (w * x + y * z);
-        var cosr = 1 - 2 * (x * x + y * y);
-        S.roll = Math.atan2(sinr, cosr) * 180 / Math.PI;
-        updateDebug();
-      });
-      orient.addEventListener('error', function(e) { console.warn('OrientationSensor error:', e.error); });
-      orient.start();
-    }
-  } catch(e) { console.warn('Generic sensor init failed:', e); }
-
-  try {
-    if ('Accelerometer' in window) {
-      var accel = new Accelerometer({ frequency: 30 });
-      accel.addEventListener('reading', function() {
-        S.hasMotion = true;
-        var total = Math.sqrt(accel.x*accel.x + accel.y*accel.y + accel.z*accel.z);
-        S.gforce = total / 9.81;
-      });
-      accel.addEventListener('error', function(e) { console.warn('Accelerometer error:', e.error); });
-      accel.start();
-    }
-  } catch(e) { console.warn('Accelerometer init failed:', e); }
-}
-
-// ── GPS ──
-function initGPS() {
+// Also TRY real GPS if available (won't hurt)
+function tryRealGPS(){
+  if(!navigator.geolocation)return;
   navigator.geolocation.watchPosition(
-    function(pos) {
-      S.lat = pos.coords.latitude;
-      S.lon = pos.coords.longitude;
-      S.alt = pos.coords.altitude || 0;
-      if (pos.coords.speed !== null && pos.coords.speed >= 0) S.speed = pos.coords.speed * 3.6;
-      if (pos.coords.heading !== null && pos.coords.heading > 0 && !S.hasOrientation) {
-        S.heading = pos.coords.heading;
-      }
-      S.hasGPS = true;
-      updateGPSDisplay();
-      updateMinimap();
-      if (!S.weatherData) fetchWeather();
+    function(p){
+      S.lat=p.coords.latitude;S.lon=p.coords.longitude;
+      S.alt=p.coords.altitude||0;
+      if(p.coords.speed!=null&&p.coords.speed>=0)S.spd=p.coords.speed*3.6;
+      S.hasGPS=true;
+      updatePos();
     },
-    function(err) { console.warn('GPS:', err.message); },
-    { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+    function(){},
+    {enableHighAccuracy:true,maximumAge:2000,timeout:5000}
   );
 }
 
-function updateGPSDisplay() {
-  document.getElementById('coord-lat').textContent = 'LAT  ' + S.lat.toFixed(6);
-  document.getElementById('coord-lon').textContent = 'LON  ' + S.lon.toFixed(6);
-  document.getElementById('coord-alt').textContent = 'ALT  ' + Math.round(S.alt) + 'm';
-  document.getElementById('speed-val').textContent = Math.round(S.speed);
-}
+// ═══ SENSORS — attach on first tap (Quest needs user gesture) ═══
+function attachSensors(){
+  if(S.sensorTapped)return;
+  S.sensorTapped=true;
 
-// ── BATTERY ──
-function initBattery() {
-  if (navigator.getBattery) {
-    navigator.getBattery().then(function(b) {
-      S.battery = Math.round(b.level * 100);
-      b.addEventListener('levelchange', function() { S.battery = Math.round(b.level * 100); });
-    }).catch(function(){});
+  // DeviceOrientation permission (iOS)
+  if(typeof DeviceOrientationEvent!=='undefined'&&typeof DeviceOrientationEvent.requestPermission==='function'){
+    DeviceOrientationEvent.requestPermission().then(function(s){if(s==='granted')listenOri()}).catch(function(){});
   }
-  if (navigator.connection) {
-    var q = navigator.connection.effectiveType;
-    S.signal = { 'slow-2g': 15, '2g': 30, '3g': 55, '4g': 85 }[q] || 72;
+  // DeviceMotion permission (iOS)
+  if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+    DeviceMotionEvent.requestPermission().then(function(s){if(s==='granted')listenMot()}).catch(function(){});
   }
-}
 
-// ── COMPASS STRIP ──
-function buildCompassStrip() {
-  var strip = document.getElementById('compass-strip');
-  var dirs = { 0:'N', 45:'NE', 90:'E', 135:'SE', 180:'S', 225:'SW', 270:'W', 315:'NW' };
-  var html = '';
-  for (var r = 0; r < 3; r++) {
-    for (var d = 0; d < 360; d += 5) {
-      var isC = dirs[d] !== undefined;
-      var label = isC ? dirs[d] : (d % 10 === 0 ? d + '\u00B0' : '');
-      html += '<div class="compass-tick ' + (isC ? 'cardinal' : '') + '"><div class="tick-line"></div><div class="tick-label">' + label + '</div></div>';
+  // Generic Sensor API
+  try{
+    if('AbsoluteOrientationSensor' in window){
+      var os=new AbsoluteOrientationSensor({frequency:30});
+      os.addEventListener('reading',function(){
+        var q=os.quaternion;if(!q)return;
+        S.hasOri=true;
+        var x=q[0],y=q[1],z=q[2],w=q[3];
+        var siny=2*(w*z+x*y),cosy=1-2*(y*y+z*z);
+        S.hdg=(Math.atan2(siny,cosy)*180/Math.PI+360)%360;
+        var sinp=2*(w*y-z*x);
+        S.pit=Math.abs(sinp)>=1?90*Math.sign(sinp):Math.asin(sinp)*180/Math.PI;
+        var sinr=2*(w*x+y*z),cosr=1-2*(x*x+y*y);
+        S.rol=Math.atan2(sinr,cosr)*180/Math.PI;
+      });
+      os.start();
     }
+  }catch(e){}
+
+  try{
+    if('Accelerometer' in window){
+      var ac=new Accelerometer({frequency:30});
+      ac.addEventListener('reading',function(){
+        S.hasMot=true;
+        S.gf=Math.sqrt(ac.x*ac.x+ac.y*ac.y+ac.z*ac.z)/9.81;
+      });
+      ac.start();
+    }
+  }catch(e){}
+
+  updDbg();
+}
+
+// Standard listeners (work without gesture on Android/Quest)
+function listenOri(){
+  window.addEventListener('deviceorientationabsolute',function(e){
+    if(e.alpha===null)return;
+    S.hasOri=true;S.hdg=(360-e.alpha)%360;
+    if(e.beta!==null)S.pit=e.beta;
+    if(e.gamma!==null)S.rol=e.gamma;
+  },true);
+  window.addEventListener('deviceorientation',function(e){
+    if(S.hasOri&&e.absolute===false)return; // absolute takes priority
+    if(e.alpha===null)return;
+    if(e.webkitCompassHeading!==undefined)S.hdg=e.webkitCompassHeading;
+    else S.hdg=(360-e.alpha)%360;
+    if(e.beta!==null)S.pit=e.beta;
+    if(e.gamma!==null)S.rol=e.gamma;
+    S.hasOri=true;
+  },true);
+}
+function listenMot(){
+  window.addEventListener('devicemotion',function(e){
+    var a=e.accelerationIncludingGravity;
+    if(!a||a.x===null)return;
+    S.hasMot=true;
+    S.gf=Math.sqrt(a.x*a.x+a.y*a.y+a.z*a.z)/9.81;
+  },true);
+}
+
+// ═══ START EVERYTHING ═══
+function startAll(){
+  buildCompass();
+  getLocationByIP();
+  tryRealGPS();
+
+  // Attach orientation/motion listeners immediately (no permission needed on Quest)
+  listenOri();
+  listenMot();
+
+  // Also attach on any tap for iOS / stricter browsers
+  document.addEventListener('click',attachSensors,{once:true});
+  document.addEventListener('touchstart',attachSensors,{once:true});
+
+  mainLoop();
+  setInterval(refreshBars,2000);
+  setInterval(function(){if(S.hasGPS)updateMap()},3000);
+  setInterval(fetchWeather,300000);
+
+  // Sim heading if no sensors after 3s
+  setTimeout(function(){
+    if(!S.hasOri){
+      setInterval(function(){
+        if(!S.hasOri)S.hdg=(S.hdg+0.3)%360;
+      },50);
+    }
+  },3000);
+}
+
+// ═══ COMPASS ═══
+function buildCompass(){
+  var s=document.getElementById('cs');
+  var dirs={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+  var h='';
+  for(var r=0;r<3;r++)for(var d=0;d<360;d+=5){
+    var ic=dirs[d]!==undefined;
+    var lb=ic?dirs[d]:(d%10===0?d+'\u00B0':'');
+    h+='<div class="ct'+(ic?' ca':'')+'"><div class="tl2"></div><div class="tla">'+lb+'</div></div>';
   }
-  strip.innerHTML = html;
+  s.innerHTML=h;
+}
+function updCompass(h){
+  var c=document.getElementById('csc'),s=document.getElementById('cs');
+  var cw=c.offsetWidth,o=-(h/5)*40-72*40+cw/2;
+  s.style.transform='translateX('+o+'px)';
+  document.getElementById('chr').textContent=Math.round(h)+'\u00B0';
 }
 
-function updateCompass(heading) {
-  var container = document.getElementById('compass-strip-container');
-  var strip = document.getElementById('compass-strip');
-  var cw = container.offsetWidth;
-  var tw = 40, fullRot = 72 * tw;
-  var offset = -(heading / 5) * tw - fullRot + cw / 2;
-  strip.style.transform = 'translateX(' + offset + 'px)';
-  document.getElementById('compass-heading-readout').textContent = Math.round(heading) + '\u00B0';
+// ═══ CLOCK ═══
+function updClock(){
+  var n=new Date();
+  document.getElementById('clk').textContent=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')+':'+String(n.getSeconds()).padStart(2,'0');
+  var d=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  document.getElementById('dte').textContent=d[n.getDay()]+' '+n.getFullYear()+'/'+String(n.getMonth()+1).padStart(2,'0')+'/'+String(n.getDate()).padStart(2,'0');
 }
 
-// ── HEADING ──
-function updateHeadingDisplay() {
-  var h = S.heading;
-  var dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  document.getElementById('heading-cardinal').textContent = dirs[Math.round(h/22.5) % 16];
-  document.getElementById('heading-degrees').textContent = Math.round(h) + '\u00B0';
-  updateCompass(h);
+// ═══ POSITION DISPLAY ═══
+function updatePos(){
+  document.getElementById('clat').textContent='LAT  '+S.lat.toFixed(6);
+  document.getElementById('clon').textContent='LON  '+S.lon.toFixed(6);
+  document.getElementById('calt').textContent='ALT  '+Math.round(S.alt)+'m';
+  document.getElementById('spd').textContent=Math.round(S.spd);
 }
 
-// ── HORIZON ──
-function updateHorizon() {
-  document.getElementById('horizon-line').style.transform = 'rotate(' + (-S.roll) + 'deg) translateY(' + (S.pitch*0.5) + 'px)';
+// ═══ HEADING ═══
+function updHdg(){
+  var h=S.hdg;
+  var d=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  document.getElementById('hcar').textContent=d[Math.round(h/22.5)%16];
+  document.getElementById('hdeg').textContent=Math.round(h)+'\u00B0';
+  updCompass(h);
 }
 
-// ── CLOCK ──
-function updateClock() {
-  var n = new Date();
-  document.getElementById('clock-time').textContent =
-    String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0') + ':' + String(n.getSeconds()).padStart(2,'0');
-  var days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-  document.getElementById('clock-date').textContent =
-    days[n.getDay()] + ' ' + n.getFullYear() + '/' + String(n.getMonth()+1).padStart(2,'0') + '/' + String(n.getDate()).padStart(2,'0');
+// ═══ HORIZON ═══
+function updHorizon(){
+  document.getElementById('hl').style.transform='rotate('+(-S.rol)+'deg) translateY('+(S.pit*.5)+'px)';
 }
 
-// ── STAT BARS ──
-function refreshStatBars() {
-  S.cpu = Math.min(100, Math.max(5, S.cpu + (Math.random()-0.5)*8));
-  S.memory = Math.min(100, Math.max(20, S.memory + (Math.random()-0.5)*3));
-  setBar('battery', S.battery); setBar('signal', S.signal);
-  setBar('cpu', S.cpu); setBar('memory', S.memory);
+// ═══ BARS ═══
+function refreshBars(){
+  S.cpu=Math.min(100,Math.max(5,S.cpu+(Math.random()-.5)*8));
+  S.mem=Math.min(100,Math.max(20,S.mem+(Math.random()-.5)*3));
+  sBar('b','battery',S.bat);sBar('s','signal',S.sig);sBar('cp','cpu',S.cpu);sBar('m','memory',S.mem);
 }
-function setBar(name, val) {
-  val = Math.round(val);
-  var fill = document.getElementById('bar-' + name);
-  var valEl = document.getElementById('val-' + name);
-  fill.style.width = val + '%'; valEl.textContent = val + '%';
-  fill.className = 'stat-bar-fill';
-  if (val < 20) fill.classList.add('critical');
-  else if (val < 40) fill.classList.add('warning');
+function sBar(id,name,val){
+  val=Math.round(val);
+  var f=document.getElementById('b'+id);
+  var v=document.getElementById('v'+id.charAt(0));
+  f.style.width=val+'%';v.textContent=val+'%';
+  f.className='sbf';
+  if(val<20)f.classList.add('cr');else if(val<40)f.classList.add('wa');
 }
 
-// ── THREAT ──
-function updateThreat() {
-  var gf = Math.abs(S.gforceSmooth - 1.0) * 40;
-  var sf = S.speed / 5;
-  var threat = Math.min(100, gf + sf);
-  document.getElementById('threat-fill').style.width = threat + '%';
-  var text = document.getElementById('threat-text');
-  if (threat < 15) { text.textContent = 'NOMINAL'; text.style.color = 'var(--green)'; }
-  else if (threat < 40) { text.textContent = 'ELEVATED'; text.style.color = 'var(--yellow)'; }
-  else if (threat < 70) { text.textContent = 'HIGH'; text.style.color = 'var(--orange)'; }
-  else { text.textContent = 'CRITICAL'; text.style.color = 'var(--red)'; }
+// Fix the bar function to use correct IDs
+function refreshBars(){
+  S.cpu=Math.min(100,Math.max(5,S.cpu+(Math.random()-.5)*8));
+  S.mem=Math.min(100,Math.max(20,S.mem+(Math.random()-.5)*3));
+  setBar('bb','vb',S.bat);
+  setBar('bs','vs',S.sig);
+  setBar('bcp','vc',S.cpu);
+  setBar('bm','vm',S.mem);
+}
+function setBar(fid,vid,val){
+  val=Math.round(val);
+  var f=document.getElementById(fid);
+  var v=document.getElementById(vid);
+  if(!f||!v)return;
+  f.style.width=val+'%';v.textContent=val+'%';
+  f.className='sbf';
+  if(val<20)f.classList.add('cr');else if(val<40)f.classList.add('wa');
 }
 
-// ── WEATHER ──
-function fetchWeather() {
-  if (!S.hasGPS) return;
-  fetch('https://api.open-meteo.com/v1/forecast?latitude=' + S.lat + '&longitude=' + S.lon +
-    '&current=temperature_2m,relative_humidity_2m,wind_speed_10,wind_direction_10,weather_code&daily=sunrise,sunset&timezone=auto')
-    .then(function(r) { return r.json(); })
-    .then(function(data) { S.weatherData = data; updateWeatherDisplay(); })
-    .catch(function(e) { console.warn('Weather:', e); });
-}
-function updateWeatherDisplay() {
-  var d = S.weatherData; if (!d || !d.current) return;
-  var c = d.current;
-  document.getElementById('wx-temp').textContent = Math.round(c.temperature_2m) + '\u00B0C';
-  document.getElementById('wx-cond').textContent = weatherCode(c.weather_code);
-  var dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  var wd = dirs[Math.round(c.wind_direction_10/22.5)%16];
-  var sr = (d.daily&&d.daily.sunrise&&d.daily.sunrise[0]) ? d.daily.sunrise[0].split('T')[1] : '--:--';
-  var ss = (d.daily&&d.daily.sunset&&d.daily.sunset[0]) ? d.daily.sunset[0].split('T')[1] : '--:--';
-  document.getElementById('wx-details').innerHTML = 'WIND: '+c.wind_speed_10+' KM/H '+wd+'<br>HUMIDITY: '+c.relative_humidity_2m+'%<br>SUNRISE: '+sr+'<br>SUNSET: '+ss;
-}
-function weatherCode(c) {
-  return {0:'CLEAR SKY',1:'MAINLY CLEAR',2:'PARTLY CLOUDY',3:'OVERCAST',45:'FOG',48:'RIME FOG',51:'LIGHT DRIZZLE',53:'DRIZZLE',55:'HEAVY DRIZZLE',61:'SLIGHT RAIN',63:'RAIN',65:'HEAVY RAIN',71:'SLIGHT SNOW',73:'SNOW',75:'HEAVY SNOW',80:'RAIN SHOWERS',95:'THUNDERSTORM',99:'SEVERE THUNDERSTORM'}[c]||'UNKNOWN';
+// Battery API
+if(navigator.getBattery){
+  navigator.getBattery().then(function(b){
+    S.bat=Math.round(b.level*100);
+    b.addEventListener('levelchange',function(){S.bat=Math.round(b.level*100)});
+  }).catch(function(){});
 }
 
-// ── MINIMAP ──
-var TILE_SIZE = 256, MAP_ZOOM = 16;
-function lon2tile(lon,z) { return ((lon+180)/360)*Math.pow(2,z); }
-function lat2tile(lat,z) { return ((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2)*Math.pow(2,z); }
-
-function loadTile(x,y,z) {
-  var key = z+'/'+x+'/'+y;
-  if (S.mapTiles[key]) return S.mapTiles[key];
-  var img = new Image(); img.crossOrigin = 'anonymous';
-  img.src = 'https://tile.openstreetmap.org/'+z+'/'+x+'/'+y+'.png';
-  var p = new Promise(function(res) { img.onload=function(){res(img)}; img.onerror=function(){res(null)}; });
-  S.mapTiles[key] = p; return p;
+// ═══ THREAT ═══
+function updThreat(){
+  var g=Math.abs(S.gfs-1)*40,sp=S.spd/5;
+  var t=Math.min(100,g+sp);
+  document.getElementById('thf').style.width=t+'%';
+  var tx=document.getElementById('thtx');
+  if(t<15){tx.textContent='NOMINAL';tx.style.color='var(--g)'}
+  else if(t<40){tx.textContent='ELEVATED';tx.style.color='var(--y)'}
+  else if(t<70){tx.textContent='HIGH';tx.style.color='var(--o)'}
+  else{tx.textContent='CRITICAL';tx.style.color='var(--r)'}
 }
 
-function updateMinimap() {
-  if (!S.hasGPS) return;
-  var canvas = document.getElementById('minimap-canvas');
-  var ctx = canvas.getContext('2d');
-  var cw = canvas.width, ch = canvas.height;
-  var tx = lon2tile(S.lon,MAP_ZOOM), ty = lat2tile(S.lat,MAP_ZOOM);
-  var cx = Math.floor(tx), cy = Math.floor(ty);
-  var ox = (tx-cx)*TILE_SIZE, oy = (ty-cy)*TILE_SIZE;
-  ctx.clearRect(0,0,cw,ch);
-  var proms = [];
-  for (var dx=-1; dx<=1; dx++) { for (var dy=-1; dy<=1; dy++) {
-    (function(ddx,ddy) { proms.push(loadTile(cx+ddx,cy+ddy,MAP_ZOOM).then(function(img) {
-      if(img) ctx.drawImage(img, cw/2-ox+ddx*TILE_SIZE, ch/2-oy+ddy*TILE_SIZE, TILE_SIZE, TILE_SIZE);
-    })); })(dx,dy);
-  }}
-  Promise.all(proms).catch(function(){});
-  document.getElementById('minimap-arrow').style.transform = 'rotate('+S.heading+'deg)';
+// ═══ WEATHER ═══
+function fetchWeather(){
+  if(!S.hasGPS)return;
+  fetch('https://api.open-meteo.com/v1/forecast?latitude='+S.lat+'&longitude='+S.lon+'&current=temperature_2m,relative_humidity_2m,wind_speed_10,wind_direction_10,weather_code&daily=sunrise,sunset&timezone=auto')
+  .then(function(r){return r.json()})
+  .then(function(d){S.wx=d;updWx()})
+  .catch(function(){});
+}
+function updWx(){
+  var d=S.wx;if(!d||!d.current)return;var c=d.current;
+  document.getElementById('wxt').textContent=Math.round(c.temperature_2m)+'\u00B0C';
+  document.getElementById('wxc').textContent=wxCode(c.weather_code);
+  var dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  var wd=dirs[Math.round(c.wind_direction_10/22.5)%16];
+  var sr=(d.daily&&d.daily.sunrise&&d.daily.sunrise[0])?d.daily.sunrise[0].split('T')[1]:'--:--';
+  var ss=(d.daily&&d.daily.sunset&&d.daily.sunset[0])?d.daily.sunset[0].split('T')[1]:'--:--';
+  document.getElementById('wxd').innerHTML='WIND: '+c.wind_speed_10+' KM/H '+wd+'<br>HUMIDITY: '+c.relative_humidity_2m+'%<br>SUNRISE: '+sr+'<br>SUNSET: '+ss;
+}
+function wxCode(c){return{0:'CLEAR SKY',1:'MAINLY CLEAR',2:'PARTLY CLOUDY',3:'OVERCAST',45:'FOG',51:'LIGHT DRIZZLE',53:'DRIZZLE',61:'SLIGHT RAIN',63:'RAIN',65:'HEAVY RAIN',71:'SLIGHT SNOW',73:'SNOW',75:'HEAVY SNOW',80:'RAIN SHOWERS',95:'THUNDERSTORM'}[c]||'UNKNOWN'}
+
+// ═══ MINIMAP ═══
+var TZ=256,MZ=16;
+function l2t(lon,z){return((lon+180)/360)*Math.pow(2,z)}
+function a2t(lat,z){return((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2)*Math.pow(2,z)}
+function ldTile(x,y,z){
+  var k=z+'/'+x+'/'+y;if(S.tiles[k])return S.tiles[k];
+  var img=new Image();img.crossOrigin='anonymous';
+  img.src='https://tile.openstreetmap.org/'+z+'/'+x+'/'+y+'.png';
+  var p=new Promise(function(res){img.onload=function(){res(img)};img.onerror=function(){res(null)}});
+  S.tiles[k]=p;return p;
+}
+function updateMap(){
+  if(!S.hasGPS)return;
+  var cv=document.getElementById('mcan'),cx=cv.getContext('2d'),cw=cv.width,ch=cv.height;
+  var tx=l2t(S.lon,MZ),ty=a2t(S.lat,MZ);
+  var ctX=Math.floor(tx),ctY=Math.floor(ty),ox=(tx-ctX)*TZ,oy=(ty-ctY)*TZ;
+  cx.clearRect(0,0,cw,ch);
+  var ps=[];
+  for(var dx=-1;dx<=1;dx++)for(var dy=-1;dy<=1;dy++){
+    (function(a,b){ps.push(ldTile(ctX+a,ctY+b,MZ).then(function(im){
+      if(im)cx.drawImage(im,cw/2-ox+a*TZ,ch/2-oy+b*TZ,TZ,TZ);
+    }))})(dx,dy);
+  }
+  Promise.all(ps).catch(function(){});
+  document.getElementById('mma').style.transform='rotate('+S.hdg+'deg)';
 }
 
-// ── WAYPOINTS ──
-document.getElementById('minimap-overlay').addEventListener('click', function(e) {
-  var rect = e.target.getBoundingClientRect();
-  var x = e.clientX-rect.left, y = e.clientY-rect.top;
-  var mapW = rect.width, mapH = rect.height;
-  var tx = lon2tile(S.lon,MAP_ZOOM), ty = lat2tile(S.lat,MAP_ZOOM);
-  var ps = 400/mapW;
-  var ntx = tx + (x-mapW/2)*ps/TILE_SIZE;
-  var nty = ty + (y-mapH/2)*ps/TILE_SIZE;
-  var n = Math.pow(2,MAP_ZOOM);
-  var wlon = (ntx/n)*360-180;
-  var wlat = Math.atan(Math.sinh(Math.PI*(1-2*nty/n)))*180/Math.PI;
-  S.waypoints.push({ name: 'WP-'+String(S.waypoints.length+1).padStart(2,'0'), lat: wlat, lon: wlon });
-  updateWaypointList();
+// ═══ WAYPOINTS ═══
+document.getElementById('mmo').addEventListener('click',function(e){
+  var r=e.target.getBoundingClientRect();
+  var x=e.clientX-r.left,y=e.clientY-r.top,mw=r.width;
+  var tx=l2t(S.lon,MZ),ty=a2t(S.lat,MZ);
+  var ps=400/mw;
+  var ntx=tx+(x-mw/2)*ps/TZ,nty=ty+(y-mw/2)*ps/TZ;
+  var n=Math.pow(2,MZ);
+  var wlon=(ntx/n)*360-180;
+  var wlat=Math.atan(Math.sinh(Math.PI*(1-2*nty/n)))*180/Math.PI;
+  S.wps.push({n:'WP-'+String(S.wps.length+1).padStart(2,'0'),lat:wlat,lon:wlon});
+  updWps();
 });
-
-function updateWaypointList() {
-  var list = document.getElementById('waypoint-list');
-  var sidebar = document.getElementById('waypoint-sidebar');
-  if (!S.waypoints.length) { sidebar.classList.remove('has-waypoints'); return; }
-  sidebar.classList.add('has-waypoints');
-  list.innerHTML = S.waypoints.map(function(wp,i) {
-    var dist = haversine(S.lat,S.lon,wp.lat,wp.lon);
-    var brg = bearing(S.lat,S.lon,wp.lat,wp.lon);
-    var ds = dist<1 ? Math.round(dist*1000)+'m' : dist.toFixed(1)+'km';
-    return '<div class="waypoint-item"><span class="wp-icon">\u25C7</span><span class="wp-name">'+wp.name+'</span><span class="wp-dist">'+ds+'</span><span class="wp-bearing">'+Math.round(brg)+'\u00B0</span><span class="wp-remove" onclick="removeWP('+i+')">\u2715</span></div>';
+function updWps(){
+  var l=document.getElementById('wpl'),sb=document.getElementById('wps');
+  if(!S.wps.length){sb.classList.remove('has');return}
+  sb.classList.add('has');
+  l.innerHTML=S.wps.map(function(w,i){
+    var d=hav(S.lat,S.lon,w.lat,w.lon);
+    var b=brg(S.lat,S.lon,w.lat,w.lon);
+    var ds=d<1?Math.round(d*1000)+'m':d.toFixed(1)+'km';
+    return'<div class="wi"><span style="color:var(--c)">\u25C7</span><span style="font-family:var(--fd);font-size:10px;color:var(--c);letter-spacing:1px">'+w.n+'</span><span style="font-family:var(--fd);font-size:11px;color:var(--c)">'+ds+'</span><span style="color:var(--cd);font-size:9px">'+Math.round(b)+'\u00B0</span><span style="cursor:pointer;color:var(--r);font-size:10px;opacity:.6;margin-left:auto" onclick="rmWp('+i+')">\u2715</span></div>';
   }).join('');
 }
-function removeWP(i) { S.waypoints.splice(i,1); updateWaypointList(); }
+function rmWp(i){S.wps.splice(i,1);updWps()}
+function hav(a,b,c,d){var R=6371,dl=(c-a)*Math.PI/180,dn=(d-b)*Math.PI/180;var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dn/2)*Math.sin(dn/2);return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
+function brg(a,b,c,d){var dl=(d-b)*Math.PI/180;var y=Math.sin(dl)*Math.cos(c*Math.PI/180);var x=Math.cos(a*Math.PI/180)*Math.sin(c*Math.PI/180)-Math.sin(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.cos(dl);return(Math.atan2(y,x)*180/Math.PI+360)%360}
 
-function haversine(a,b,c,d) {
-  var R=6371, dLat=(c-a)*Math.PI/180, dLon=(d-b)*Math.PI/180;
-  var x = Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-function bearing(a,b,c,d) {
-  var dl=(d-b)*Math.PI/180;
-  var y=Math.sin(dl)*Math.cos(c*Math.PI/180);
-  var x=Math.cos(a*Math.PI/180)*Math.sin(c*Math.PI/180)-Math.sin(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.cos(dl);
-  return (Math.atan2(y,x)*180/Math.PI+360)%360;
-}
-
-// ── SENSOR DEBUG DISPLAY ──
-function updateDebug() {
-  document.getElementById('sensor-debug').innerHTML =
-    'HDG: ' + S.heading.toFixed(1) + '\u00B0<br>' +
-    'PIT: ' + S.pitch.toFixed(1) + '\u00B0<br>' +
-    'ROL: ' + S.roll.toFixed(1) + '\u00B0<br>' +
-    'G: ' + S.gforce.toFixed(2) + '<br>' +
-    'ORI: ' + (S.hasOrientation ? '<span style="color:var(--green)">LIVE</span>' : '<span style="color:var(--red)">NONE</span>') + '<br>' +
-    'MOT: ' + (S.hasMotion ? '<span style="color:var(--green)">LIVE</span>' : '<span style="color:var(--red)">NONE</span>') + '<br>' +
-    'GPS: ' + (S.hasGPS ? '<span style="color:var(--green)">LOCK</span>' : '<span style="color:var(--red)">NONE</span>');
+// ═══ DEBUG ═══
+function updDbg(){
+  document.getElementById('dbg').innerHTML=
+    'HDG: '+S.hdg.toFixed(1)+'\u00B0<br>'+
+    'PIT: '+S.pit.toFixed(1)+'\u00B0<br>'+
+    'ROL: '+S.rol.toFixed(1)+'\u00B0<br>'+
+    'G: '+S.gf.toFixed(2)+'<br>'+
+    'ORI: '+(S.hasOri?'<span style="color:var(--g)">LIVE</span>':'<span style="color:var(--r)">SIM</span>')+'<br>'+
+    'MOT: '+(S.hasMot?'<span style="color:var(--g)">LIVE</span>':'<span style="color:var(--r)">SIM</span>')+'<br>'+
+    'GPS: '+(S.hasGPS?'<span style="color:var(--g)">LOCK</span>':'<span style="color:var(--r)">WAIT</span>');
 }
 
-// ── BOOT SEQUENCE ──
-function runBootSequence(perms, callback) {
-  var bootEl = document.getElementById('boot-screen');
-  bootEl.style.display = 'flex';
-  var log = document.getElementById('boot-log');
-  var lines = [
-    { text: 'INITIALIZING J.A.R.V.I.S. CORE v8.0.2', status: null },
-    { text: 'SENSOR PERMISSION GATE', status: 'ok', label: 'PASSED' },
-    { text: 'GPS MODULE', status: perms.gps?'ok':'warn', label: perms.gps?'ACQUIRED':'DENIED' },
-    { text: 'ORIENTATION SENSOR', status: perms.orientation?'ok':'warn', label: perms.orientation?'ONLINE':'UNAVAILABLE' },
-    { text: 'MOTION / ACCELEROMETER', status: perms.motion?'ok':'warn', label: perms.motion?'ACTIVE':'UNAVAILABLE' },
-    { text: 'GENERIC SENSOR API', status: perms.genericSensor?'ok':'warn', label: perms.genericSensor?'AVAILABLE':'N/A' },
-    { text: 'WEATHER TELEMETRY', status: 'ok', label: 'CONNECTED' },
-    { text: 'MAPPING SUBSYSTEM', status: 'ok', label: 'LOADED' },
-    { text: 'THREAT ASSESSMENT', status: 'ok', label: 'NOMINAL' },
-    { text: 'WEBXR BYPASS', status: 'ok', label: 'PANEL MODE' },
-    { text: 'ALL SYSTEMS GO', status: 'ok', label: 'READY' },
-  ];
-  var i = 0;
-  function next() {
-    if (i >= lines.length) {
-      setTimeout(function() {
-        bootEl.classList.add('done');
-        setTimeout(function() {
-          document.getElementById('hud').classList.add('active');
-          if (callback) callback();
-        }, 400);
-      }, 500);
-      return;
-    }
-    var div = document.createElement('div'); div.className = 'line';
-    var html = '> ' + lines[i].text;
-    if (lines[i].status) html += ' <span class="status '+lines[i].status+'">['+lines[i].label+']</span>';
-    div.innerHTML = html; log.appendChild(div);
-    setTimeout(function() { div.classList.add('visible'); i++; setTimeout(next, 100+Math.random()*150); }, 40);
-  }
-  next();
-}
-
-// ── MAIN LOOP ──
-function mainLoop() {
-  updateClock();
-  updateHeadingDisplay();
-  updateHorizon();
-  S.gforceSmooth += (S.gforce - S.gforceSmooth) * 0.15;
-  document.getElementById('gforce-val').innerHTML = S.gforceSmooth.toFixed(2) + '<span class="label" style="margin-left:4px">G</span>';
-  updateThreat();
+// ═══ MAIN LOOP ═══
+function mainLoop(){
+  updClock();updHdg();updHorizon();
+  S.gfs+=(S.gf-S.gfs)*.15;
+  document.getElementById('gf').innerHTML=S.gfs.toFixed(2)+'<span class="label" style="margin-left:4px">G</span>';
+  updThreat();updDbg();
   requestAnimationFrame(mainLoop);
 }
 </script>
