@@ -3,804 +3,1266 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quest 3 HUD</title>
+<title>Quest 3 VR HUD</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#000; overflow:hidden; font-family:monospace; }
-  #overlay {
-    position:fixed; top:0; left:0; width:100%; height:100%;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    background:rgba(0,0,0,0.85); color:#00ff88; z-index:100;
-  }
-  #overlay h1 { font-size:1.4rem; letter-spacing:0.15em; margin-bottom:1rem; text-transform:uppercase; }
-  #startBtn {
-    padding:0.75rem 2rem; background:transparent; border:1px solid #00ff88;
-    color:#00ff88; font-family:monospace; font-size:1rem; letter-spacing:0.1em;
-    cursor:pointer; text-transform:uppercase; transition:all 0.2s;
-  }
-  #startBtn:hover { background:#00ff8820; box-shadow:0 0 16px #00ff8860; }
-  #status { margin-top:0.75rem; font-size:0.75rem; color:#00ff8880; letter-spacing:0.08em; }
-  canvas#c { display:block; width:100vw; height:100vh; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; background:#000; overflow:hidden; }
+#launchScreen {
+  position:fixed; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  background:radial-gradient(ellipse at center, #020d0d 0%, #000 100%);
+  z-index:999;
+}
+#launchScreen h1 {
+  font:900 1rem/1 'Courier New',monospace; letter-spacing:.35em;
+  color:#00e5ff; text-shadow:0 0 20px #00e5ff88; margin-bottom:.4rem;
+  text-transform:uppercase;
+}
+#launchScreen p {
+  font:.62rem/1 'Courier New',monospace; letter-spacing:.18em;
+  color:#00e5ff44; margin-bottom:2.2rem; text-transform:uppercase;
+}
+#enterBtn {
+  font:.7rem/1 'Courier New',monospace; letter-spacing:.22em;
+  color:#00e5ff; border:1px solid #00e5ff55; background:transparent;
+  padding:.65rem 2rem; cursor:pointer; text-transform:uppercase;
+  transition:all .2s; text-shadow:0 0 10px #00e5ff66;
+}
+#enterBtn:hover { background:#00e5ff12; border-color:#00e5ff; }
+#enterBtn:disabled { opacity:.3; cursor:default; }
+#statusMsg {
+  font:.55rem/1 'Courier New',monospace; letter-spacing:.14em;
+  color:#00e5ff44; margin-top:1rem; text-transform:uppercase;
+}
+/* The main renderer canvas fills the window */
+canvas#vrCanvas { display:block; width:100%; height:100%; }
 </style>
 </head>
 <body>
-<div id="overlay">
-  <h1>⬡ TACTICAL HUD v2.0</h1>
-  <button id="startBtn">ENTER VR</button>
-  <div id="status">Quest 3 · WebXR · Immersive-VR</div>
+
+<div id="launchScreen">
+  <h1>⬡ TACTICAL HUD v3.0</h1>
+  <p>Quest 3 · WebXR Immersive-VR · Canvas HUD</p>
+  <button id="enterBtn" onclick="enterVR()">◈ ENTER VR</button>
+  <div id="statusMsg">Checking WebXR support…</div>
 </div>
-<canvas id="c"></canvas>
 
+<!-- Three.js renderer target -->
+<canvas id="vrCanvas"></canvas>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import * as THREE from 'three';
 
-// ─── STATE ────────────────────────────────────────────────────────────────────
-const STATE = {
-  // Zoom
-  zoomLevels: [1,2,4,8,10],
-  zoomIndex: 0,
-  zoomFactor: 1,
-  targetZoomFactor: 1,
-  zoomStartTime: 0,
-  zoomDuration: 200,
-  baseFov: 75,
+// ═══════════════════════════════════════════════════════════════════
+//  CONSTANTS & TUNING
+// ═══════════════════════════════════════════════════════════════════
+const BASE_FOV        = 75;          // degrees, non-zoomed
+const HUD_Z           = -1.05;       // metres in front of camera
+const ZOOM_LEVELS     = [1,2,4,8,10];
+const ZOOM_DURATION   = 220;         // ms for zoom transition
+const FOV_MIN         = 8;           // safety clamp
+const FOV_MAX         = 90;
+const MAX_HOVER_DIST  = 40;          // metres
+const MAX_LOCK_DIST   = 80;
+const MAX_OCCL_FRAMES = 30;          // frames before lock lost by occlusion
+const SMOOTH_ORI      = 0.10;        // slerp alpha when zoomed
+const SMOOTH_POS      = 0.07;        // lerp alpha when zoomed
+const BBOX_SMOOTH     = 0.18;        // screen bbox lerp
+const WEATHER_MS      = 10*60*1000;
+const AQI_MS          = 30*60*1000;
 
-  // Smoothed pose
-  smoothPos: new THREE.Vector3(),
-  smoothQuat: new THREE.Quaternion(),
-  poseInit: false,
+// HUD canvas logical resolution (will be scaled by devicePixelRatio)
+const HUD_LW = 1920;
+const HUD_LH = 1080;
 
-  // Hover / Lock
-  hoverTarget: null,
-  lockTarget: null,
-  lockLost: false,
-  occlusionFrames: 0,
-  maxOcclusionFrames: 30,
-  maxLockDistance: 80,
-  maxHoverDistance: 30,
-
-  // Bbox smooth
-  bboxSmooth: { x:0, y:0, w:0, h:0 },
-  bboxPrev: null,
-
-  // Reticle animation
-  reticleScale: 1,
-  lockRingAngle: 0,
-  lockRingAnim: 0,
-
-  // Flash state
-  flashTargets: {},
-
-  // ENV / Clock
-  clock: { h:'--', m:'--', s:'--', date:'', loc:'' },
-  weather: { temp:'--', cond:'--', wind:'--', hum:'--', sunrise:'--', sunset:'--' },
-  airQ: { aqi:'--', aqiLabel:'UNKNOWN', aqiColor:'#888', pollen:'--', pollenLabel:'--', pollenColor:'#888' },
-  geoLat: null, geoLon: null,
-  lastWeatherFetch: 0,
-  lastAQIFetch: 0,
-  WEATHER_INTERVAL: 10*60*1000,
-  AQI_INTERVAL: 30*60*1000,
-
-  // XR
-  xrSession: null,
-  xrRefSpace: null,
-  inXR: false,
-
-  // Input
-  triggerPressed: false,
-  prevTriggerPressed: false,
+// ═══════════════════════════════════════════════════════════════════
+//  THEME
+// ═══════════════════════════════════════════════════════════════════
+const T = {
+  main   : '#00e5ff',
+  dim    : '#00e5ff66',
+  dimmer : '#00e5ff33',
+  accent : '#76ff03',
+  warn   : '#ff6d00',
+  danger : '#ff1744',
+  lock   : '#ff4444',
+  good   : '#76ff03',
 };
 
-// ─── THREE SETUP ──────────────────────────────────────────────────────────────
-const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+// ═══════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════
+const S = {
+  // zoom
+  zoomIndex:0, zoomFactor:1, zoomTarget:1,
+  zoomStart:0, currentFov:BASE_FOV,
+
+  // smoothed pose (only used when zoom > 1)
+  smoothPos: new THREE.Vector3(),
+  smoothQuat: new THREE.Quaternion(),
+  poseReady: false,
+
+  // targeting
+  hoverHit: null,       // THREE.Intersection or null
+  lockTarget: null,     // THREE.Mesh or null
+  occludeFrames: 0,
+  lockLostTimer: 0,
+  bboxS: {x:0,y:0,w:0,h:0},   // smoothed screen bbox
+  bboxInit: false,
+
+  // reticle anim
+  reticleR: 14,
+  lockAng: 0,
+
+  // env / clock
+  geoLat: null, geoLon: null,
+  weatherFetched: 0,
+  aqiFetched: 0,
+  clock: { h:'--', m:'--', s:'--', date:'--- -- ----' },
+  weather: { temp:'--°', cond:'------', wind:'-- KM/H', hum:'--%', sun:'↑-- ↓--' },
+  aqi: { val:'--', label:'------', color:T.dim },
+  pollen: { val:'--', label:'------', color:T.dim },
+  area: '', street:'',
+  gpsLabel: '● GPS ACQUIRING',
+
+  // heading (compass)
+  headingTarget: null,
+  headingSmooth: null,
+
+  // speed / odo
+  speedKmh: 0,
+  odoM: 0,
+
+  // flash registry  key → expiry timestamp
+  flashes: {},
+
+  // XR
+  inVR: false,
+  xrSession: null,
+
+  // input
+  prevTrigger: false,
+  prevBtnA: false,
+
+  // breadcrumbs for minimap
+  crumbs: [],
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  THREE.JS RENDERER
+// ═══════════════════════════════════════════════════════════════════
+const canvas3d = document.getElementById('vrCanvas');
+const renderer = new THREE.WebGLRenderer({ canvas:canvas3d, antialias:true, alpha:false });
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a14);
+scene.background = new THREE.Color(0x05080f);
 
-const camera = new THREE.PerspectiveCamera(STATE.baseFov, window.innerWidth/window.innerHeight, 0.1, 200);
-camera.position.set(0,1.6,0);
+// Fog for depth
+scene.fog = new THREE.Fog(0x05080f, 40, 120);
 
-// Lighting
-scene.add(new THREE.AmbientLight(0x334455, 1.5));
-const dLight = new THREE.DirectionalLight(0x88ccff, 1.2);
-dLight.position.set(5,10,5);
-scene.add(dLight);
+// Camera
+const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth/window.innerHeight, 0.05, 200);
+camera.position.set(0, 1.6, 0);
+scene.add(camera);
 
-// ─── SCENE TARGETS ────────────────────────────────────────────────────────────
-const selectableMeshes = [];
+// ═══════════════════════════════════════════════════════════════════
+//  LIGHTING
+// ═══════════════════════════════════════════════════════════════════
+scene.add(new THREE.AmbientLight(0x1a2a3a, 2.0));
+const sun = new THREE.DirectionalLight(0x6688cc, 1.4);
+sun.position.set(8, 14, 6);
+scene.add(sun);
+const rimLight = new THREE.PointLight(0x00e5ff, 0.4, 30);
+rimLight.position.set(-5, 4, -5);
+scene.add(rimLight);
+
+// ═══════════════════════════════════════════════════════════════════
+//  SCENE — SELECTABLE TARGETS
+// ═══════════════════════════════════════════════════════════════════
+const selectables = [];
 const targetDefs = [
-  { name:'ALPHA-1', pos:[0,1.6,-8],  geo:new THREE.BoxGeometry(1.2,1.2,1.2),     color:0x224466 },
-  { name:'BETA-2',  pos:[4,1.2,-12], geo:new THREE.SphereGeometry(0.8,16,16),     color:0x442244 },
-  { name:'GAMMA-3', pos:[-5,2,-15],  geo:new THREE.CylinderGeometry(0.5,0.5,2,12),color:0x224422 },
-  { name:'DELTA-4', pos:[2,0.8,-6],  geo:new THREE.BoxGeometry(0.8,0.8,0.8),      color:0x443300 },
-  { name:'OMEGA-5', pos:[-3,1.8,-20],geo:new THREE.SphereGeometry(1.2,16,16),     color:0x003344 },
+  { name:'ALPHA-1', pos:[  0, 1.6,  -8], geo: new THREE.BoxGeometry(1.2,1.2,1.2),          color:0x0d3d66 },
+  { name:'BETA-2',  pos:[  5, 1.2, -12], geo: new THREE.SphereGeometry(0.85,20,20),         color:0x3d0d55 },
+  { name:'GAMMA-3', pos:[ -4, 2.0, -16], geo: new THREE.CylinderGeometry(.5,.5,2.2,14),     color:0x0d3d1a },
+  { name:'DELTA-4', pos:[  2, 0.8,  -6], geo: new THREE.BoxGeometry(.9,.9,.9),               color:0x3d2800 },
+  { name:'OMEGA-5', pos:[ -6, 1.8, -22], geo: new THREE.SphereGeometry(1.3,20,20),           color:0x003344 },
+  { name:'SIGMA-6', pos:[  8, 2.5, -18], geo: new THREE.ConeGeometry(.7,2,12),               color:0x2d0d0d },
 ];
 targetDefs.forEach(d => {
-  const mat = new THREE.MeshStandardMaterial({ color:d.color, metalness:0.6, roughness:0.3 });
+  const mat = new THREE.MeshStandardMaterial({
+    color: d.color, metalness:0.7, roughness:0.25, emissive:0x000000
+  });
   const mesh = new THREE.Mesh(d.geo, mat);
   mesh.position.set(...d.pos);
-  mesh.userData.name = d.name;
-  mesh.userData.baseMat = mat;
+  mesh.userData.hudName = d.name;
+  mesh.userData.origEmissive = new THREE.Color(0);
   scene.add(mesh);
-  selectableMeshes.push(mesh);
+  selectables.push(mesh);
 });
 
 // Grid floor
-const gridHelper = new THREE.GridHelper(60,30,0x112233,0x0a1520);
-gridHelper.position.y = 0;
-scene.add(gridHelper);
+const grid = new THREE.GridHelper(100, 50, 0x0a2030, 0x061018);
+scene.add(grid);
 
-// Ambient particles (small floating cubes)
-for(let i=0;i<80;i++){
-  const s=0.04+Math.random()*0.06;
-  const pm=new THREE.Mesh(
+// Ambient floating particles
+for (let i = 0; i < 120; i++) {
+  const s = 0.03 + Math.random()*0.05;
+  const pm = new THREE.Mesh(
     new THREE.BoxGeometry(s,s,s),
-    new THREE.MeshBasicMaterial({color:0x00ff88,transparent:true,opacity:0.3+Math.random()*0.3})
+    new THREE.MeshBasicMaterial({ color:0x00e5ff, transparent:true, opacity:0.15+Math.random()*0.2 })
   );
-  pm.position.set((Math.random()-0.5)*40,0.5+Math.random()*4,(Math.random()-0.5)*40);
+  pm.position.set((Math.random()-.5)*60, .3+Math.random()*5, (Math.random()-.5)*60);
+  pm.userData.floatSeed = Math.random()*Math.PI*2;
   scene.add(pm);
 }
 
-// ─── HUD CANVAS ───────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+//  HUD CANVAS — HIGH RESOLUTION
+// ═══════════════════════════════════════════════════════════════════
+// We match Quest 3's per-eye resolution (approx 1832×1920), scaled by DPR.
+// On desktop we use window size. The key: HUD canvas is always at least
+// devicePixelRatio × logical size so text is crisp.
+const DPR = window.devicePixelRatio || 1;
 const hudCanvas = document.createElement('canvas');
-hudCanvas.width = 2048; hudCanvas.height = 2048;
-const hud = hudCanvas.getContext('2d');
+// Physical pixel count = logical * DPR for crispness
+hudCanvas.width  = Math.round(HUD_LW * DPR);
+hudCanvas.height = Math.round(HUD_LH * DPR);
+const hud = hudCanvas.getContext('2d', { alpha:true });
+// Scale context so all drawing uses logical coordinates
+hud.scale(DPR, DPR);
+
+// THREE texture from HUD canvas
 const hudTex = new THREE.CanvasTexture(hudCanvas);
+hudTex.minFilter = THREE.LinearFilter;   // no mipmap blur
+hudTex.magFilter = THREE.LinearFilter;
+hudTex.generateMipmaps = false;          // critical for crispness
 
-// HUD plane attached to camera
-const hudGeo = new THREE.PlaneGeometry(1,1);
-const hudMat = new THREE.MeshBasicMaterial({
-  map: hudTex, transparent:true, depthTest:false, depthWrite:false, side:THREE.DoubleSide
-});
-const hudPlane = new THREE.Mesh(hudGeo, hudMat);
-hudPlane.renderOrder = 999;
+// HUD plane — parented to camera so it moves with head
+const hudPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({
+    map: hudTex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.NormalBlending,
+  })
+);
+hudPlane.renderOrder = 9999;
 camera.add(hudPlane);
-scene.add(camera);
 
-// Scale HUD plane to match viewport
-function resizeHudPlane(){
-  const aspect = window.innerWidth/window.innerHeight;
-  const fovRad = THREE.MathUtils.degToRad(STATE.zoomFactor>1 ? STATE.baseFov/STATE.zoomFactor : STATE.baseFov);
-  const h = 2*Math.tan(fovRad/2)*1.2;
-  const w = h*aspect;
-  hudPlane.scale.set(w,h,1);
-  hudPlane.position.set(0,0,-1.2);
+function resizeHudPlane() {
+  // Fit the plane to exactly fill the current FOV at distance HUD_Z
+  const aspect = camera.aspect || (window.innerWidth/window.innerHeight);
+  const fovRad = THREE.MathUtils.degToRad(S.currentFov);
+  const planeH = 2 * Math.abs(HUD_Z) * Math.tan(fovRad / 2);
+  const planeW = planeH * aspect;
+  hudPlane.scale.set(planeW, planeH, 1);
+  hudPlane.position.set(0, 0, HUD_Z);
 }
 resizeHudPlane();
 
-// ─── RAYCASTER ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+//  RAYCASTER
+// ═══════════════════════════════════════════════════════════════════
 const raycaster = new THREE.Raycaster();
-raycaster.far = STATE.maxHoverDistance;
+const _fwd = new THREE.Vector3();
+const _box3 = new THREE.Box3();
+const _v3   = new THREE.Vector3();
 
-// ─── ZOOM ─────────────────────────────────────────────────────────────────────
-function cycleZoom(){
-  STATE.zoomIndex = (STATE.zoomIndex+1) % STATE.zoomLevels.length;
-  STATE.targetZoomFactor = STATE.zoomLevels[STATE.zoomIndex];
-  STATE.zoomStartTime = performance.now();
-  STATE.zoomFactor = STATE.zoomFactor; // starts from current
+// ═══════════════════════════════════════════════════════════════════
+//  ZOOM
+// ═══════════════════════════════════════════════════════════════════
+function cycleZoom() {
+  S.zoomIndex = (S.zoomIndex + 1) % ZOOM_LEVELS.length;
+  S.zoomTarget = ZOOM_LEVELS[S.zoomIndex];
+  S.zoomStart  = performance.now();
   flash('zoom');
 }
 
-function easeInOut(t){ return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2; }
+function easeInOut(t) { return t<0.5 ? 2*t*t : 1-(-2*t+2)**2/2; }
 
-function updateZoom(){
-  const now = performance.now();
-  const t = Math.min(1,(now-STATE.zoomStartTime)/STATE.zoomDuration);
+function updateZoom(now) {
+  const t = Math.min(1, (now - S.zoomStart) / ZOOM_DURATION);
   const e = easeInOut(t);
-  const prev = STATE.zoomFactor;
-  STATE.zoomFactor = prev + (STATE.targetZoomFactor-prev)*e;
-  if(t>=1) STATE.zoomFactor = STATE.targetZoomFactor;
-  const newFov = STATE.baseFov/STATE.zoomFactor;
-  camera.fov = THREE.MathUtils.clamp(newFov,10,95);
+  S.zoomFactor = S.zoomFactor + (S.zoomTarget - S.zoomFactor) * e;
+  if (t >= 1) S.zoomFactor = S.zoomTarget;
+  S.currentFov = THREE.MathUtils.clamp(BASE_FOV / S.zoomFactor, FOV_MIN, FOV_MAX);
+  camera.fov = S.currentFov;
   camera.updateProjectionMatrix();
   resizeHudPlane();
 }
 
-// ─── POSE SMOOTHING ───────────────────────────────────────────────────────────
-function smoothPose(renderCam){
-  const alpha = STATE.zoomFactor>1 ? 0.10 : 1.0;
-  const alphaP = STATE.zoomFactor>1 ? 0.07 : 1.0;
-  if(!STATE.poseInit){
-    STATE.smoothPos.copy(renderCam.position);
-    STATE.smoothQuat.copy(renderCam.quaternion);
-    STATE.poseInit=true;
+// ═══════════════════════════════════════════════════════════════════
+//  POSE SMOOTHING (only when zoomed > 1)
+// ═══════════════════════════════════════════════════════════════════
+function smoothPose() {
+  if (!S.poseReady) {
+    S.smoothPos.copy(camera.position);
+    S.smoothQuat.copy(camera.quaternion);
+    S.poseReady = true;
     return;
   }
-  STATE.smoothPos.lerp(renderCam.position,alphaP);
-  STATE.smoothQuat.slerp(renderCam.quaternion,alpha);
-}
-
-// ─── HOVER / LOCK ─────────────────────────────────────────────────────────────
-function doRaycast(){
-  const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-  raycaster.set(camera.position, dir);
-  raycaster.far = STATE.maxHoverDistance;
-  const hits = raycaster.intersectObjects(selectableMeshes,true);
-  STATE.hoverTarget = hits.length>0 ? hits[0] : null;
-
-  if(STATE.lockTarget){
-    const ltd = STATE.lockTarget;
-    const dist = camera.position.distanceTo(ltd.position);
-    if(dist > STATE.maxLockDistance){ releaseLock('range'); return; }
-    if(!scene.getObjectById(ltd.id)){ releaseLock('lost'); return; }
-    // Occlusion
-    const toTarget = new THREE.Vector3().subVectors(ltd.position, camera.position);
-    const oRay = new THREE.Raycaster(camera.position, toTarget.normalize(), 0.1, dist-0.2);
-    oRay.far = dist-0.2;
-    const oHits = oRay.intersectObjects(selectableMeshes,true);
-    const occluded = oHits.length>0 && oHits[0].object!==ltd && !ltd.getObjectById?.(oHits[0].object.id);
-    if(occluded) STATE.occlusionFrames++;
-    else STATE.occlusionFrames=0;
-    if(STATE.occlusionFrames>STATE.maxOcclusionFrames){ releaseLock('occluded'); }
+  if (S.zoomFactor > 1.0) {
+    S.smoothPos.lerp(camera.position, SMOOTH_POS);
+    S.smoothQuat.slerp(camera.quaternion, SMOOTH_ORI);
+  } else {
+    S.smoothPos.copy(camera.position);
+    S.smoothQuat.copy(camera.quaternion);
   }
 }
 
-function releaseLock(reason){
-  STATE.lockTarget=null; STATE.occlusionFrames=0; STATE.lockLost=true;
-  setTimeout(()=>STATE.lockLost=false,2000);
+// ═══════════════════════════════════════════════════════════════════
+//  RAYCAST / HOVER / LOCK
+// ═══════════════════════════════════════════════════════════════════
+function doRaycast() {
+  _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  raycaster.set(camera.position, _fwd);
+  raycaster.far = MAX_HOVER_DIST;
+  const hits = raycaster.intersectObjects(selectables, false);
+  S.hoverHit = hits.length > 0 ? hits[0] : null;
+
+  // Update emissive highlight
+  selectables.forEach(m => {
+    const isHover = S.hoverHit && S.hoverHit.object === m;
+    const isLocked = S.lockTarget === m;
+    const target = isLocked ? new THREE.Color(0.3,0,0) :
+                   isHover  ? new THREE.Color(0,0.12,0.18) :
+                               new THREE.Color(0,0,0);
+    m.material.emissive.lerp(target, 0.15);
+  });
+
+  // Lock validity check
+  if (S.lockTarget) {
+    const lt = S.lockTarget;
+    const dist = camera.position.distanceTo(lt.position);
+    if (dist > MAX_LOCK_DIST || !scene.getObjectById(lt.id)) {
+      releaseLock(); return;
+    }
+    // Occlusion check
+    const toTgt = _v3.subVectors(lt.position, camera.position);
+    const len = toTgt.length();
+    const oRay = new THREE.Raycaster(camera.position, toTgt.clone().normalize(), 0.1, len - 0.3);
+    const oHits = oRay.intersectObjects(selectables, false);
+    const occluded = oHits.length > 0 && oHits[0].object !== lt;
+    S.occludeFrames = occluded ? S.occludeFrames + 1 : 0;
+    if (S.occludeFrames > MAX_OCCL_FRAMES) releaseLock();
+  }
 }
 
-function tryLock(){
-  if(STATE.hoverTarget){
-    STATE.lockTarget = STATE.hoverTarget.object;
-    STATE.occlusionFrames=0; STATE.lockLost=false;
+function releaseLock() {
+  S.lockTarget = null;
+  S.occludeFrames = 0;
+  S.bboxInit = false;
+  S.lockLostTimer = performance.now() + 2200;
+  flash('lockLost');
+}
+
+function tryLock() {
+  if (S.lockTarget) { releaseLock(); return; }
+  if (S.hoverHit) {
+    S.lockTarget = S.hoverHit.object;
+    S.occludeFrames = 0;
+    S.bboxInit = false;
     flash('lock');
-  } else if(STATE.lockTarget){
-    releaseLock('manual');
   }
 }
 
-// ─── PROJECT BBOX ─────────────────────────────────────────────────────────────
-const _box3 = new THREE.Box3();
-const _v3 = new THREE.Vector3();
-function projectBbox(mesh, cam){
+// ═══════════════════════════════════════════════════════════════════
+//  BBOX PROJECTION
+// ═══════════════════════════════════════════════════════════════════
+function projectBbox(mesh) {
   _box3.setFromObject(mesh);
-  const corners=[
+  const corners = [
     [_box3.min.x,_box3.min.y,_box3.min.z],[_box3.max.x,_box3.min.y,_box3.min.z],
     [_box3.min.x,_box3.max.y,_box3.min.z],[_box3.max.x,_box3.max.y,_box3.min.z],
     [_box3.min.x,_box3.min.y,_box3.max.z],[_box3.max.x,_box3.min.y,_box3.max.z],
     [_box3.min.x,_box3.max.y,_box3.max.z],[_box3.max.x,_box3.max.y,_box3.max.z],
   ];
-  const W=hudCanvas.width, H=hudCanvas.height;
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  let anyValid=false;
-  for(const c of corners){
+  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity, anyValid=false;
+  // Project into logical HUD coords (0-HUD_LW, 0-HUD_LH)
+  for (const c of corners) {
     _v3.set(c[0],c[1],c[2]);
-    _v3.project(cam);
-    if(_v3.z>1) continue; // behind camera
-    const sx=((_v3.x+1)/2)*W;
-    const sy=((-_v3.y+1)/2)*H;
-    minX=Math.min(minX,sx); maxX=Math.max(maxX,sx);
-    minY=Math.min(minY,sy); maxY=Math.max(maxY,sy);
-    anyValid=true;
+    _v3.project(camera);
+    if (_v3.z > 1) continue;
+    const sx = (_v3.x  * .5 + .5) * HUD_LW;
+    const sy = (-_v3.y * .5 + .5) * HUD_LH;
+    minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
+    minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
+    anyValid = true;
   }
-  if(!anyValid) return null;
-  return {x:minX,y:minY,w:maxX-minX,h:maxY-minY};
+  if (!anyValid) return null;
+  return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
 }
 
-function smoothBbox(raw){
-  const s = STATE.bboxSmooth;
-  if(!STATE.bboxPrev){ STATE.bboxSmooth={...raw}; STATE.bboxPrev=raw; return {...raw}; }
-  const a=0.2;
-  s.x = s.x+(raw.x-s.x)*a;
-  s.y = s.y+(raw.y-s.y)*a;
-  s.w = s.w+(raw.w-s.w)*a;
-  s.h = s.h+(raw.h-s.h)*a;
-  STATE.bboxPrev=raw;
-  return {...s};
+function getSmoothBbox(raw) {
+  if (!S.bboxInit) { S.bboxS = {...raw}; S.bboxInit = true; return {...raw}; }
+  S.bboxS.x += (raw.x - S.bboxS.x) * BBOX_SMOOTH;
+  S.bboxS.y += (raw.y - S.bboxS.y) * BBOX_SMOOTH;
+  S.bboxS.w += (raw.w - S.bboxS.w) * BBOX_SMOOTH;
+  S.bboxS.h += (raw.h - S.bboxS.h) * BBOX_SMOOTH;
+  return {...S.bboxS};
 }
 
-// ─── FLASH ────────────────────────────────────────────────────────────────────
-function flash(key){ STATE.flashTargets[key]=performance.now(); }
-function flashAlpha(key,dur=300){
-  const t=STATE.flashTargets[key];
-  if(!t) return 0;
-  const elapsed=performance.now()-t;
-  if(elapsed>dur){ delete STATE.flashTargets[key]; return 0; }
-  return 1-elapsed/dur;
+// ═══════════════════════════════════════════════════════════════════
+//  FLASH SYSTEM
+// ═══════════════════════════════════════════════════════════════════
+function flash(key, dur=350) { S.flashes[key] = performance.now() + dur; }
+function flashAlpha(key) {
+  const exp = S.flashes[key];
+  if (!exp) return 0;
+  const rem = exp - performance.now();
+  if (rem <= 0) { delete S.flashes[key]; return 0; }
+  return rem / 350;
+}
+function flashColor(baseHex, key) {
+  const a = flashAlpha(key);
+  if (a < 0.01) return baseHex;
+  return lerpHex(baseHex, '#ffffff', a * 0.8);
 }
 
-// ─── CLOCK ────────────────────────────────────────────────────────────────────
-function updateClock(){
-  const now=new Date();
-  const h=String(now.getHours()).padStart(2,'0');
-  const m=String(now.getMinutes()).padStart(2,'0');
-  const s=String(now.getSeconds()).padStart(2,'0');
-  const days=['SUN','MON','TUE','WED','THU','FRI','SAT'];
-  const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  STATE.clock.h=h; STATE.clock.m=m; STATE.clock.s=s;
-  STATE.clock.date=`${days[now.getDay()]} ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
-}
-setInterval(updateClock,500); updateClock();
-
-// ─── GEOLOCATION ──────────────────────────────────────────────────────────────
-function initGeo(){
-  if(!navigator.geolocation) return;
-  navigator.geolocation.watchPosition(pos=>{
-    const lat=pos.coords.latitude, lon=pos.coords.longitude;
-    const moved = STATE.geoLat===null || Math.abs(lat-STATE.geoLat)>0.005||Math.abs(lon-STATE.geoLon)>0.005;
-    STATE.geoLat=lat; STATE.geoLon=lon;
-    if(moved||performance.now()-STATE.lastWeatherFetch>STATE.WEATHER_INTERVAL) fetchWeather();
-    if(moved||performance.now()-STATE.lastAQIFetch>STATE.AQI_INTERVAL) fetchAQI();
-  },null,{enableHighAccuracy:true,maximumAge:30000});
-}
-initGeo();
-// Periodic refresh
-setInterval(()=>{ if(STATE.geoLat&&performance.now()-STATE.lastWeatherFetch>STATE.WEATHER_INTERVAL) fetchWeather(); },60000);
-setInterval(()=>{ if(STATE.geoLat&&performance.now()-STATE.lastAQIFetch>STATE.AQI_INTERVAL) fetchAQI(); },60000);
-
-// ─── WEATHER ──────────────────────────────────────────────────────────────────
-const WMO={
-  0:'CLEAR',1:'MOSTLY CLR',2:'PARTLY CLD',3:'OVERCAST',
-  45:'FOG',48:'ICING FOG',
-  51:'LIGHT DZL',53:'DRIZZLE',55:'HVY DZL',
-  61:'LIGHT RAIN',63:'RAIN',65:'HVY RAIN',
-  71:'LIGHT SNOW',73:'SNOW',75:'HVY SNOW',77:'SNOW GRAINS',
-  80:'SHOWERS',81:'SHOWERS',82:'HVY SHOWERS',
-  85:'SNOW SHOWERS',86:'HVY SNOW SHW',
-  95:'STORM',96:'STORM/HAIL',99:'STORM/HAIL',
-};
-async function fetchWeather(){
-  if(!STATE.geoLat) return;
-  STATE.lastWeatherFetch=performance.now();
-  try{
-    const url=`https://api.open-meteo.com/v1/forecast?latitude=${STATE.geoLat.toFixed(4)}&longitude=${STATE.geoLon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1`;
-    const r=await fetch(url); const d=await r.json();
-    const c=d.current;
-    const prev=STATE.weather.temp;
-    STATE.weather.temp=`${Math.round(c.temperature_2m)}°C`;
-    STATE.weather.cond=WMO[c.weather_code]||`CODE${c.weather_code}`;
-    STATE.weather.wind=`${Math.round(c.wind_speed_10m)} KM/H`;
-    STATE.weather.hum=`${c.relative_humidity_2m}%`;
-    const sr=new Date(d.daily.sunrise[0]); const ss=new Date(d.daily.sunset[0]);
-    STATE.weather.sunrise=`${String(sr.getHours()).padStart(2,'0')}:${String(sr.getMinutes()).padStart(2,'0')}`;
-    STATE.weather.sunset=`${String(ss.getHours()).padStart(2,'0')}:${String(ss.getMinutes()).padStart(2,'0')}`;
-    if(prev!==STATE.weather.temp) flash('weather');
-  }catch(e){ console.warn('weather err',e); }
-}
-
-// ─── AQI / POLLEN ─────────────────────────────────────────────────────────────
-function aqiLabel(v){
-  if(v===null||v==='--') return {label:'UNKNOWN',color:'#888'};
-  if(v<=25) return {label:'GOOD',color:'#00ff88'};
-  if(v<=50) return {label:'FAIR',color:'#88ff44'};
-  if(v<=75) return {label:'MODERATE',color:'#ffcc00'};
-  if(v<=100) return {label:'POOR',color:'#ff8800'};
-  if(v<=150) return {label:'VERY POOR',color:'#ff4400'};
-  return {label:'HAZARDOUS',color:'#ff0044'};
-}
-function pollenLevel(v){
-  if(!v||v<10) return {label:'LOW',color:'#00ff88'};
-  if(v<50) return {label:'MODERATE',color:'#ffcc00'};
-  if(v<100) return {label:'HIGH',color:'#ff8800'};
-  return {label:'VERY HIGH',color:'#ff0044'};
-}
-async function fetchAQI(){
-  if(!STATE.geoLat) return;
-  STATE.lastAQIFetch=performance.now();
-  try{
-    const url=`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${STATE.geoLat.toFixed(4)}&longitude=${STATE.geoLon.toFixed(4)}&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen`;
-    const r=await fetch(url); const d=await r.json();
-    const c=d.current;
-    const aqi=c.european_aqi??c.us_aqi??null;
-    const al=aqiLabel(aqi);
-    STATE.airQ.aqi=aqi!==null?String(Math.round(aqi)):'--';
-    STATE.airQ.aqiLabel=al.label; STATE.airQ.aqiColor=al.color;
-    // Pollen
-    const pollens=[
-      {v:c.grass_pollen,name:'GRASS'},
-      {v:c.birch_pollen,name:'BIRCH'},
-      {v:c.mugwort_pollen,name:'MUGWORT'}
-    ].filter(p=>p.v!=null);
-    if(pollens.length){
-      const best=pollens.reduce((a,b)=>(b.v>a.v?b:a));
-      const pl=pollenLevel(best.v);
-      STATE.airQ.pollen=String(Math.round(best.v));
-      STATE.airQ.pollenLabel=`${pl.label} ${best.name}`;
-      STATE.airQ.pollenColor=pl.color;
-    }
-    flash('aqi');
-  }catch(e){ console.warn('aqi err',e); }
-}
-
-// ─── HUD DRAW ─────────────────────────────────────────────────────────────────
-const W=hudCanvas.width, H=hudCanvas.height;
-
-function drawLine(x1,y1,x2,y2,color='#00ff88',lw=2){
-  hud.save(); hud.strokeStyle=color; hud.lineWidth=lw;
-  hud.beginPath(); hud.moveTo(x1,y1); hud.lineTo(x2,y2); hud.stroke();
-  hud.restore();
-}
-function drawText(txt,x,y,color='#00ff88',size=28,align='left',alpha=1){
-  hud.save(); hud.globalAlpha=alpha;
-  hud.fillStyle=color; hud.font=`${size}px 'Courier New', monospace`;
-  hud.textAlign=align; hud.fillText(txt,x,y); hud.restore();
-}
-function drawTextWithFlash(txt,x,y,baseColor,size,align,flashKey){
-  const fa=flashAlpha(flashKey);
-  const col=fa>0 ? lerpColor(baseColor,'#ffffff',fa) : baseColor;
-  drawText(txt,x,y,col,size,align);
-}
-
-function lerpColor(c1,c2,t){
-  const p=(s)=>parseInt(s,16);
-  const r1=p(c1.slice(1,3)),g1=p(c1.slice(3,5)),b1=p(c1.slice(5,7));
-  const r2=p(c2.slice(1,3)),g2=p(c2.slice(3,5)),b2=p(c2.slice(5,7));
-  const r=Math.round(r1+(r2-r1)*t),g=Math.round(g1+(g2-g1)*t),b=Math.round(b1+(b2-b1)*t);
+function lerpHex(c1, c2, t) {
+  const p = s => parseInt(s,16);
+  const r1=p(c1.slice(1,3)), g1=p(c1.slice(3,5)), b1=p(c1.slice(5,7));
+  const r2=p(c2.slice(1,3)), g2=p(c2.slice(3,5)), b2=p(c2.slice(5,7));
+  const r=Math.round(r1+(r2-r1)*t), g=Math.round(g1+(g2-g1)*t), b=Math.round(b1+(b2-b1)*t);
   return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
 }
 
-function drawReticle(){
-  const cx=W/2, cy=H/2;
-  const hover=STATE.hoverTarget!==null;
-  const locked=STATE.lockTarget!==null;
+// ═══════════════════════════════════════════════════════════════════
+//  CLOCK
+// ═══════════════════════════════════════════════════════════════════
+const DAYS   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function p2(n) { return String(n).padStart(2,'0'); }
 
-  STATE.lockRingAngle=(STATE.lockRingAngle+0.025)%(Math.PI*2);
-  STATE.reticleScale=STATE.reticleScale+(( hover?1.4:1.0)-STATE.reticleScale)*0.12;
+function updateClock() {
+  const n = new Date();
+  S.clock.h    = p2(n.getHours());
+  S.clock.m    = p2(n.getMinutes());
+  S.clock.s    = p2(n.getSeconds());
+  S.clock.date = `${DAYS[n.getDay()]} ${n.getDate()} ${MONTHS[n.getMonth()]} ${n.getFullYear()}`;
+}
+setInterval(updateClock, 500);
+updateClock();
 
-  const baseR=12*STATE.reticleScale;
-  const outerR=locked?36*STATE.reticleScale:22*STATE.reticleScale;
-  const col=locked?'#ff4444':hover?'#ffcc00':'#00ff88';
+// ═══════════════════════════════════════════════════════════════════
+//  GEOLOCATION
+// ═══════════════════════════════════════════════════════════════════
+let lastGeoLat=null, lastGeoLon=null, lastSpeedPos=null, lastSpeedTime=null;
+const speedSamples=[];
 
-  // Center dot
+function haversineM(a,b,c,d) {
+  const R=6371000, dLat=(c-a)*Math.PI/180, dLon=(d-b)*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+function startGeo() {
+  if (!navigator.geolocation) { S.gpsLabel='● GPS UNAVAILABLE'; return; }
+  navigator.geolocation.watchPosition(pos => {
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    S.geoLat = lat; S.geoLon = lon;
+    S.gpsLabel = '● GPS LOCKED';
+
+    // Speed + odo
+    const now = Date.now();
+    if (lastSpeedPos) {
+      const dist = haversineM(lastSpeedPos.lat, lastSpeedPos.lon, lat, lon);
+      const dt = (now - lastSpeedTime) / 1000;
+      if (dt > 0.3) {
+        const spd = pos.coords.speed != null ? pos.coords.speed*3.6 : (dist/dt)*3.6;
+        speedSamples.push(spd);
+        if (speedSamples.length > 4) speedSamples.shift();
+        S.speedKmh = speedSamples.reduce((a,b)=>a+b)/speedSamples.length;
+        if (S.speedKmh < 0.5) S.speedKmh = 0;
+        if (dist > 2) S.odoM += dist;
+      }
+    }
+    lastSpeedPos = {lat,lon}; lastSpeedTime = now;
+
+    // Breadcrumbs for minimap
+    if (!S.crumbs.length || haversineM(S.crumbs[S.crumbs.length-1].lat, S.crumbs[S.crumbs.length-1].lon, lat, lon) > 4) {
+      S.crumbs.push({lat,lon});
+      if (S.crumbs.length > 300) S.crumbs.shift();
+    }
+
+    const moved = lastGeoLat==null || Math.abs(lat-lastGeoLat)>.0005 || Math.abs(lon-lastGeoLon)>.0005;
+    lastGeoLat=lat; lastGeoLon=lon;
+
+    const now2 = performance.now();
+    if (now2 - S.weatherFetched > WEATHER_MS || moved && S.weatherFetched===0) fetchWeather();
+    if (now2 - S.aqiFetched    > AQI_MS    || moved && S.aqiFetched===0)    fetchAQI();
+    if (moved) reverseGeocode();
+  },
+  () => { S.gpsLabel='● GPS ERROR'; },
+  { enableHighAccuracy:true, maximumAge:0, timeout:20000 }
+  );
+}
+startGeo();
+
+// ═══════════════════════════════════════════════════════════════════
+//  REVERSE GEOCODE
+// ═══════════════════════════════════════════════════════════════════
+let geocodeTimer;
+function reverseGeocode() {
+  clearTimeout(geocodeTimer);
+  geocodeTimer = setTimeout(async () => {
+    if (!S.geoLat) return;
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${S.geoLat.toFixed(4)}&lon=${S.geoLon.toFixed(4)}&format=json&zoom=16`, {headers:{'Accept-Language':'en'}});
+      const d = await r.json();
+      const addr = d.address || {};
+      S.street = (addr.road||addr.pedestrian||addr.path||'').toUpperCase();
+      const city = addr.city||addr.town||addr.village||'';
+      const area = addr.neighbourhood||addr.suburb||addr.city_district||city||addr.state||'';
+      S.area = (area&&city&&area!==city ? area+', '+city : area||city||'').toUpperCase();
+      flash('geo');
+    } catch(_) {}
+  }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  WEATHER
+// ═══════════════════════════════════════════════════════════════════
+const WMO_CODES = {
+  0:'CLEAR',1:'MOSTLY CLR',2:'PARTLY CLD',3:'OVERCAST',
+  45:'FOG',48:'ICING FOG',
+  51:'LT DRIZZLE',53:'DRIZZLE',55:'HVY DRIZZLE',
+  61:'LT RAIN',63:'RAIN',65:'HVY RAIN',
+  71:'LT SNOW',73:'SNOW',75:'HVY SNOW',
+  80:'SHOWERS',81:'SHOWERS',82:'HVY SHOWERS',
+  95:'STORM',96:'STORM/HAIL',99:'STORM/HAIL',
+};
+
+async function fetchWeather() {
+  if (!S.geoLat) return;
+  S.weatherFetched = performance.now();
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${S.geoLat.toFixed(4)}&longitude=${S.geoLon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1`;
+    const d = await (await fetch(url)).json();
+    const c = d.current;
+    S.weather.temp = `${Math.round(c.temperature_2m)}°C`;
+    S.weather.cond = WMO_CODES[c.weather_code] || `CODE${c.weather_code}`;
+    S.weather.wind = `${Math.round(c.wind_speed_10m)} KM/H`;
+    S.weather.hum  = `${c.relative_humidity_2m}%`;
+    if (d.daily) {
+      const sr = d.daily.sunrise[0].split('T')[1].slice(0,5);
+      const ss = d.daily.sunset[0].split('T')[1].slice(0,5);
+      S.weather.sun = `↑${sr} ↓${ss}`;
+    }
+    flash('weather');
+  } catch(_) {}
+}
+
+async function fetchAQI() {
+  if (!S.geoLat) return;
+  S.aqiFetched = performance.now();
+  try {
+    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${S.geoLat.toFixed(4)}&longitude=${S.geoLon.toFixed(4)}&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen`;
+    const d = await (await fetch(url)).json();
+    const c = d.current;
+    const aqiVal = c.european_aqi ?? c.us_aqi ?? null;
+    if (aqiVal != null) {
+      const {label,color} = aqiBucket(aqiVal);
+      S.aqi = { val:String(Math.round(aqiVal)), label, color };
+    }
+    const pollens = [
+      {n:'GRASS',  v:c.grass_pollen},
+      {n:'BIRCH',  v:c.birch_pollen},
+      {n:'MUGWORT',v:c.mugwort_pollen},
+    ].filter(x => x.v != null);
+    if (pollens.length) {
+      const top = pollens.reduce((a,b)=>b.v>a.v?b:a);
+      const {label,color} = pollenBucket(top.v);
+      S.pollen = { val:String(Math.round(top.v)), label:`${label} ${top.n}`, color };
+    }
+    flash('aqi');
+  } catch(_) {}
+}
+
+function aqiBucket(v) {
+  if (v<=25) return {label:'GOOD',      color:T.good};
+  if (v<=50) return {label:'FAIR',      color:T.good};
+  if (v<=75) return {label:'MODERATE',  color:T.warn};
+  if (v<=100)return {label:'POOR',      color:T.warn};
+  if (v<=150)return {label:'VERY POOR', color:T.danger};
+  return             {label:'HAZARDOUS',color:T.danger};
+}
+function pollenBucket(v) {
+  if (v<=10)return {label:'LOW',       color:T.good};
+  if (v<=30)return {label:'MODERATE',  color:T.warn};
+  if (v<=50)return {label:'HIGH',      color:T.warn};
+  return           {label:'VERY HIGH', color:T.danger};
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HEADING (compass)
+// ═══════════════════════════════════════════════════════════════════
+(function startHeading() {
+  function applyOrient(e) {
+    let hdg = null;
+    if (e.webkitCompassHeading != null) hdg = e.webkitCompassHeading;
+    else if (e.absolute && e.alpha != null) hdg = (360 - e.alpha + 360) % 360;
+    if (hdg != null) S.headingTarget = hdg;
+  }
+  if ('ondeviceorientationabsolute' in window)
+    window.addEventListener('deviceorientationabsolute', applyOrient, true);
+  window.addEventListener('deviceorientation', applyOrient, true);
+})();
+
+function updateHeading() {
+  if (S.headingTarget == null) return;
+  if (S.headingSmooth == null) { S.headingSmooth = S.headingTarget; return; }
+  let diff = S.headingTarget - S.headingSmooth;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  S.headingSmooth = (S.headingSmooth + diff * 0.1 + 360) % 360;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  MINIMAP TILE CACHE
+// ═══════════════════════════════════════════════════════════════════
+const tileCache = {};
+const MAP_ZOOM = 17;
+
+function lon2tf(lo,z){return(lo+180)/360*Math.pow(2,z);}
+function lat2tf(la,z){return(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*Math.pow(2,z);}
+
+function getTile(tx,ty,z) {
+  const key=`${z}/${tx}/${ty}`;
+  if (tileCache[key]) return tileCache[key];
+  const e={img:new Image(),loaded:false};
+  e.img.crossOrigin='anonymous';
+  e.img.onload=()=>{e.loaded=true;};
+  e.img.src=`https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
+  tileCache[key]=e; return e;
+}
+
+function llToPx(pLat,pLon,pxPerM) {
+  return {
+    x: (pLon-S.geoLon)*111320*Math.cos(S.geoLat*Math.PI/180)*pxPerM,
+    y:-(pLat-S.geoLat)*111320*pxPerM,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HUD DRAWING UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+// All coordinates in LOGICAL pixels (HUD_LW × HUD_LH)
+
+const LW = HUD_LW;
+const LH = HUD_LH;
+const cx = LW/2;
+const cy = LH/2;
+
+function cls() { hud.clearRect(0, 0, LW, LH); }
+
+function setFont(size, weight='700', fam="'Courier New',monospace") {
+  hud.font = `${weight} ${size}px ${fam}`;
+}
+function txt(str, x, y, col=T.main, alpha=1, align='left') {
   hud.save();
-  hud.fillStyle=col; hud.beginPath();
-  hud.arc(cx,cy,3,0,Math.PI*2); hud.fill();
+  hud.globalAlpha = alpha;
+  hud.fillStyle = col;
+  hud.textAlign = align;
+  hud.textBaseline = 'alphabetic';
+  hud.fillText(str, x, y);
   hud.restore();
+}
+function line(x1,y1,x2,y2,col=T.main,alpha=1,lw=1.5) {
+  hud.save(); hud.globalAlpha=alpha; hud.strokeStyle=col; hud.lineWidth=lw;
+  hud.beginPath(); hud.moveTo(x1,y1); hud.lineTo(x2,y2); hud.stroke(); hud.restore();
+}
+function rect(x,y,w,h,col,alpha=1) {
+  hud.save(); hud.globalAlpha=alpha; hud.fillStyle=col;
+  hud.fillRect(x,y,w,h); hud.restore();
+}
+function strokeRect(x,y,w,h,col,alpha=1,lw=1.5) {
+  hud.save(); hud.globalAlpha=alpha; hud.strokeStyle=col; hud.lineWidth=lw;
+  hud.strokeRect(x,y,w,h); hud.restore();
+}
+function panel(x,y,w,h,col=T.main) {
+  rect(x,y,w,h,'rgba(2,10,18,0.72)');
+  strokeRect(x,y,w,h,col,0.18,1);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HUD SECTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 1. SCANLINE + VIGNETTE ──────────────────────────────────────
+let sweepY = 0;
+function drawScanlines() {
+  // Subtle horizontal scanlines
+  for (let y=0; y<LH; y+=4) {
+    hud.save(); hud.globalAlpha=0.022; hud.strokeStyle=T.main; hud.lineWidth=1;
+    hud.beginPath(); hud.moveTo(0,y); hud.lineTo(LW,y); hud.stroke(); hud.restore();
+  }
+  // Moving sweep
+  sweepY += 0.8; if (sweepY > LH+40) sweepY=-40;
+  const sg = hud.createLinearGradient(0,sweepY-20,0,sweepY+20);
+  sg.addColorStop(0,'transparent'); sg.addColorStop(.5,T.main); sg.addColorStop(1,'transparent');
+  hud.save(); hud.globalAlpha=0.055; hud.strokeStyle=sg; hud.lineWidth=2;
+  hud.beginPath(); hud.moveTo(0,sweepY); hud.lineTo(LW,sweepY); hud.stroke(); hud.restore();
+}
+
+// ── 2. FRAME CORNERS ────────────────────────────────────────────
+function drawCorners() {
+  const m=28, c=22, col=T.main, a=0.35, lw=1.5;
+  [[m,m,1,1],[LW-m,m,-1,1],[m,LH-m,1,-1],[LW-m,LH-m,-1,-1]].forEach(([x,y,sx,sy])=>{
+    hud.save(); hud.strokeStyle=col; hud.globalAlpha=a; hud.lineWidth=lw;
+    hud.beginPath(); hud.moveTo(x,y+sy*c); hud.lineTo(x,y); hud.lineTo(x+sx*c,y); hud.stroke(); hud.restore();
+  });
+}
+
+// ── 3. COMPASS BAR (top centre) ────────────────────────────────
+function drawCompass() {
+  const bw=440, bh=32, bx=cx-bw/2, by=14;
+  panel(bx,by,bw,bh);
+
+  const hdg = S.headingSmooth ?? 0;
+  const pxPerDeg = bw/80;
+  const CARD = {0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+
+  // Clip to bar
+  hud.save();
+  hud.beginPath(); hud.rect(bx+1,by+1,bw-2,bh-2); hud.clip();
+
+  for (let d=-120; d<=120+360; d+=5) {
+    const offset = (d-hdg)*pxPerDeg;
+    if (offset < -bw/2-20 || offset > bw/2+20) continue;
+    const px = cx + offset;
+    const dNorm = ((d%360)+360)%360;
+    const isCard = CARD[dNorm] !== undefined;
+    const isMajor = d%10===0;
+    const tickH = isCard ? bh*.52 : isMajor ? bh*.32 : bh*.14;
+    hud.save();
+    hud.strokeStyle = dNorm===0 ? T.accent : T.main;
+    hud.lineWidth = isCard ? 1.5 : 0.7;
+    hud.globalAlpha = isCard ? 0.9 : isMajor ? 0.35 : 0.12;
+    hud.beginPath(); hud.moveTo(px,by+bh); hud.lineTo(px,by+bh-tickH); hud.stroke();
+    if (isCard) {
+      setFont(10,'900'); hud.fillStyle = dNorm===0?T.accent:T.main;
+      hud.globalAlpha = dNorm===0?1:0.7; hud.textAlign='center'; hud.textBaseline='top';
+      hud.fillText(CARD[dNorm], px, by+2);
+    }
+    hud.restore();
+  }
+  hud.restore();
+
+  // Centre tick
+  hud.save(); hud.strokeStyle=T.accent; hud.lineWidth=2; hud.globalAlpha=0.9;
+  hud.beginPath(); hud.moveTo(cx,by+bh+1); hud.lineTo(cx-4,by+bh+7); hud.lineTo(cx+4,by+bh+7); hud.closePath(); hud.fill(); hud.restore();
+
+  // Heading readout
+  const hdgStr = S.headingSmooth!=null ? `${Math.round(S.headingSmooth).toString().padStart(3,'0')}°` : '---°';
+  setFont(12,'900'); hud.textAlign='center';
+  const tw = hud.measureText(hdgStr).width + 12;
+  rect(cx-tw/2, by+bh+6, tw, 15, 'rgba(0,5,10,0.85)');
+  strokeRect(cx-tw/2, by+bh+6, tw, 15, T.main, 0.25, 1);
+  setFont(11,'900'); txt(hdgStr, cx, by+bh+17, T.accent, 0.95, 'center');
+}
+
+// ── 4. TOP-LEFT: CLOCK + DATE + LOCATION ────────────────────────
+function drawClock() {
+  const ox=24, oy=20;
+  const pw=260, ph=88;
+  panel(ox,oy,pw,ph);
+
+  const timeStr = `${S.clock.h}:${S.clock.m}:${S.clock.s}`;
+  setFont(36,'900');
+  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=10;
+  txt(timeStr, ox+12, oy+40, flashColor(T.main,'weather'));
+  hud.restore();
+
+  setFont(11,'700'); txt(S.clock.date, ox+12, oy+58, T.main, 0.6);
+
+  if (S.area) {
+    setFont(11,'900'); txt(S.area.slice(0,26), ox+12, oy+74, flashColor(T.main,'geo'), 0.85);
+  } else {
+    setFont(10,'700'); txt(S.gpsLabel, ox+12, oy+74, T.dim, 0.7);
+  }
+
+  // GPS coords small
+  if (S.geoLat!=null) {
+    setFont(9,'700');
+    txt(`${S.geoLat.toFixed(4)}°N ${S.geoLon.toFixed(4)}°E`, ox+12, oy+86, T.dim, 0.45);
+  }
+}
+
+// ── 5. TOP-RIGHT: ZOOM INDICATOR ─────────────────────────────────
+function drawZoom() {
+  const pw=170, ph=72, ox=LW-pw-24, oy=20;
+  panel(ox,oy,pw,ph);
+
+  setFont(9,'900'); txt('ZOOM', ox+10, oy+20, T.dim, 0.7);
+  const zStr = `${S.zoomFactor.toFixed(1)}×`;
+  setFont(30,'900');
+  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=8;
+  txt(zStr, ox+pw-10, oy+42, flashColor(T.main,'zoom'), 0.95, 'right');
+  hud.restore();
+
+  // Bar
+  const bx=ox+10, bby=oy+54, bw=pw-20, bh=5;
+  rect(bx,bby,bw,bh,'rgba(255,255,255,0.04)');
+  strokeRect(bx,bby,bw,bh,T.main,0.2,1);
+  const ratio = Math.log2(Math.max(S.zoomFactor,1)) / Math.log2(10);
+  const filled = Math.min(1,ratio) * bw;
+  rect(bx,bby,filled,bh,T.main,0.8);
+  // Tick marks
+  ZOOM_LEVELS.forEach(z=>{
+    const tx = bx + Math.log2(Math.max(z,1))/Math.log2(10)*bw;
+    line(tx,bby-3,tx,bby+bh+3,T.main,0.3,1);
+  });
+
+  // Level labels
+  setFont(8,'700');
+  ZOOM_LEVELS.forEach(z=>{
+    const tx = bx + Math.log2(Math.max(z,1))/Math.log2(10)*bw;
+    txt(`${z}×`, tx, oy+50, T.dim, 0.35, 'center');
+  });
+}
+
+// ── 6. RETICLE (centre) ──────────────────────────────────────────
+let reticleR = 14;
+let lockAng = 0;
+
+function drawReticle() {
+  const hover  = S.hoverHit  != null;
+  const locked = S.lockTarget != null;
+  const col    = locked ? T.lock : hover ? T.warn : T.main;
+
+  reticleR += ((hover ? 18 : 13) - reticleR) * 0.12;
+  lockAng = (lockAng + 0.025) % (Math.PI*2);
+
+  hud.save();
+
+  // Centre dot
+  hud.fillStyle = col; hud.globalAlpha = 0.9;
+  hud.beginPath(); hud.arc(cx,cy,2.5,0,Math.PI*2); hud.fill();
 
   // Inner ring
-  hud.save();
-  hud.strokeStyle=col+'cc'; hud.lineWidth=1.5;
-  hud.beginPath(); hud.arc(cx,cy,baseR,0,Math.PI*2); hud.stroke();
-  hud.restore();
+  hud.strokeStyle = col; hud.lineWidth = 1.5; hud.globalAlpha = 0.7;
+  hud.beginPath(); hud.arc(cx,cy,reticleR,0,Math.PI*2); hud.stroke();
 
-  // Cross hairs
-  const g=22; const gap=8;
-  hud.save(); hud.strokeStyle=col+'88'; hud.lineWidth=1;
+  // Cross gaps
+  const g=24, gap=reticleR+4;
+  hud.strokeStyle=col; hud.lineWidth=1; hud.globalAlpha=0.5;
   hud.beginPath();
   hud.moveTo(cx-g,cy); hud.lineTo(cx-gap,cy);
   hud.moveTo(cx+gap,cy); hud.lineTo(cx+g,cy);
   hud.moveTo(cx,cy-g); hud.lineTo(cx,cy-gap);
   hud.moveTo(cx,cy+gap); hud.lineTo(cx,cy+g);
-  hud.stroke(); hud.restore();
+  hud.stroke();
 
-  // Lock ring
-  if(locked){
-    STATE.lockRingAnim=(STATE.lockRingAnim+0.02)%(Math.PI*2);
-    hud.save();
-    hud.strokeStyle='#ff4444'; hud.lineWidth=2;
-    for(let i=0;i<4;i++){
-      const a=STATE.lockRingAnim+i*(Math.PI/2);
-      hud.beginPath();
-      hud.arc(cx,cy,outerR,a,a+Math.PI/3);
-      hud.stroke();
+  // Lock spinning arcs
+  if (locked) {
+    hud.globalAlpha = 0.9; hud.strokeStyle = T.lock; hud.lineWidth = 2;
+    for (let i=0;i<4;i++) {
+      const a = lockAng + i*(Math.PI/2);
+      hud.beginPath(); hud.arc(cx,cy,reticleR+10,a,a+Math.PI/3); hud.stroke();
     }
-    hud.restore();
+    // Pulse ring
+    const pa = (Math.sin(performance.now()*0.005)*0.5+0.5);
+    hud.globalAlpha = pa*0.25; hud.lineWidth=1;
+    hud.beginPath(); hud.arc(cx,cy,reticleR+18,0,Math.PI*2); hud.stroke();
   }
-}
 
-function drawBrackets(bbox, col, thick, corner=16){
-  const {x,y,w,h}=bbox;
-  const pad=12;
-  const bx=x-pad, by=y-pad, bw=w+pad*2, bh=h+pad*2;
-  hud.save(); hud.strokeStyle=col; hud.lineWidth=thick;
-  const c=corner;
-  // TL
-  hud.beginPath(); hud.moveTo(bx,by+c); hud.lineTo(bx,by); hud.lineTo(bx+c,by); hud.stroke();
-  // TR
-  hud.beginPath(); hud.moveTo(bx+bw-c,by); hud.lineTo(bx+bw,by); hud.lineTo(bx+bw,by+c); hud.stroke();
-  // BL
-  hud.beginPath(); hud.moveTo(bx,by+bh-c); hud.lineTo(bx,by+bh); hud.lineTo(bx+c,by+bh); hud.stroke();
-  // BR
-  hud.beginPath(); hud.moveTo(bx+bw-c,by+bh); hud.lineTo(bx+bw,by+bh); hud.lineTo(bx+bw,by+bh-c); hud.stroke();
   hud.restore();
-  return {bx,by,bw,bh};
 }
 
-function drawTargetOverlay(){
-  const target=STATE.lockTarget||STATE.hoverTarget?.object;
-  if(!target) return;
-  const raw=projectBbox(target, camera);
-  if(!raw) return;
-  const bbox=STATE.lockTarget?smoothBbox(raw):raw;
+// ── 7. TARGET BRACKETS + OVERLAY ─────────────────────────────────
+function drawTargetOverlay() {
+  const target = S.lockTarget || S.hoverHit?.object;
+  if (!target) return;
 
-  const dist=camera.position.distanceTo(target.position);
-  const isLocked=!!STATE.lockTarget;
+  const raw = projectBbox(target);
+  if (!raw) return;
 
-  // Off-screen indicator
-  const cx=W/2, cy=H/2;
-  const bcx=bbox.x+bbox.w/2, bcy=bbox.y+bbox.h/2;
-  const margin=60;
-  const offScreen=bcx<margin||bcx>W-margin||bcy<margin||bcy>H-margin;
+  const bbox  = S.lockTarget ? getSmoothBbox(raw) : raw;
+  const isLocked = !!S.lockTarget;
+  const col   = isLocked ? T.lock : T.warn;
+  const thick = isLocked ? 2.5 : 1.8;
+  const pad   = 10;
+  const name  = target.userData.hudName;
+  const dist  = camera.position.distanceTo(target.position);
 
-  if(offScreen){
-    // Draw edge arrow
-    const dx=bcx-cx, dy=bcy-cy;
-    const ang=Math.atan2(dy,dx);
-    const ex=cx+Math.cos(ang)*(Math.min(cx,cy)-80);
-    const ey=cy+Math.sin(ang)*(Math.min(cx,cy)-80);
-    hud.save();
-    hud.translate(ex,ey); hud.rotate(ang);
-    hud.strokeStyle='#ffcc00'; hud.lineWidth=2;
-    hud.beginPath(); hud.moveTo(-14,0); hud.lineTo(14,0); hud.lineTo(8,-8); hud.moveTo(14,0); hud.lineTo(8,8);
-    hud.stroke(); hud.restore();
-    drawText(target.userData.name,ex+18*Math.cos(ang),ey+18*Math.sin(ang),'#ffcc00',22);
+  const bx=bbox.x-pad, by=bbox.y-pad, bw=bbox.w+pad*2, bh=bbox.h+pad*2;
+  const margin=56;
+  const centX=bx+bw/2, centY=by+bh/2;
+  const offScreen = centX<margin||centX>LW-margin||centY<margin||centY>LH-margin;
+
+  if (offScreen) {
+    // Edge arrow
+    const ang = Math.atan2(centY-cy, centX-cx);
+    const ex = cx + Math.cos(ang)*(Math.min(cx,cy)-72);
+    const ey = cy + Math.sin(ang)*(Math.min(cx,cy)-72);
+    hud.save(); hud.translate(ex,ey); hud.rotate(ang);
+    hud.strokeStyle=T.warn; hud.lineWidth=2; hud.globalAlpha=0.8;
+    hud.beginPath(); hud.moveTo(-12,0); hud.lineTo(12,0); hud.moveTo(7,-6); hud.lineTo(12,0); hud.lineTo(7,6); hud.stroke();
+    hud.restore();
+    setFont(10,'900'); txt(name, ex+14, ey-4, T.warn, 0.7);
     return;
   }
 
-  const col=isLocked?'#ff4444':'#ffcc00';
-  const thick=isLocked?3:2;
-  const {bx,by,bw,bh}=drawBrackets(bbox,col,thick,isLocked?20:14);
+  // Corner brackets
+  const cs=18;
+  hud.save(); hud.strokeStyle=col; hud.lineWidth=thick; hud.globalAlpha=isLocked?0.92:0.72;
+  hud.lineCap='round';
+  [[bx,by,1,1],[bx+bw,by,-1,1],[bx,by+bh,1,-1],[bx+bw,by+bh,-1,-1]].forEach(([x,y,sx,sy])=>{
+    hud.beginPath(); hud.moveTo(x,y+sy*cs); hud.lineTo(x,y); hud.lineTo(x+sx*cs,y); hud.stroke();
+  });
+  hud.restore();
 
-  // Label
-  const labelY=by-12;
-  drawText(target.userData.name,bx,labelY,col,24);
-  drawText(`${dist.toFixed(1)}m`,bx+bw,labelY,col,22,'right');
-  if(isLocked) drawText('◆ LOCKED',bx+bw/2,labelY-26,'#ff4444',20,'center');
+  // Labels
+  setFont(12,'900');
+  txt(name, bx, by-13, col, isLocked?1:0.85);
+  txt(`${dist.toFixed(1)}m`, bx+bw, by-13, col, isLocked?0.9:0.7, 'right');
 
-  // Scan line animation on locked
-  if(isLocked){
-    const scanY=by+(performance.now()%1200)/1200*bh;
+  if (isLocked) {
+    setFont(10,'900');
+    txt('◆ LOCKED', bx+bw/2, by-27, T.lock, 0.9, 'center');
+    // Scan line
+    const scanY = by + ((performance.now()*0.001*50)%(bh+0));
     hud.save();
-    const grad=hud.createLinearGradient(bx,scanY-4,bx,scanY+4);
-    grad.addColorStop(0,'rgba(255,68,68,0)');
-    grad.addColorStop(0.5,'rgba(255,68,68,0.35)');
-    grad.addColorStop(1,'rgba(255,68,68,0)');
-    hud.fillStyle=grad;
-    hud.fillRect(bx,scanY-4,bw,8);
-    hud.restore();
+    const sg=hud.createLinearGradient(bx,scanY-3,bx,scanY+3);
+    sg.addColorStop(0,'rgba(255,68,68,0)');sg.addColorStop(.5,'rgba(255,68,68,0.28)');sg.addColorStop(1,'rgba(255,68,68,0)');
+    hud.fillStyle=sg; hud.fillRect(bx,scanY-3,bw,6); hud.restore();
   }
 }
 
-function drawZoomHUD(){
-  const zf=STATE.zoomFactor;
-  const px=96, py=H-140;
-  // Panel bg
-  hud.save();
-  hud.fillStyle='rgba(0,20,10,0.55)';
-  hud.fillRect(px-12,py-32,200,90);
-  hud.strokeStyle='#00ff8840'; hud.lineWidth=1;
-  hud.strokeRect(px-12,py-32,200,90);
-  hud.restore();
-
-  drawText('ZOOM',px,py,'#00ff8888',20);
-  drawTextWithFlash(`${zf.toFixed(1)}x`,px+80,py,'#00ff88',32,'left','zoom');
-
-  // Bar
-  const bw=160, bh=6;
-  hud.save();
-  hud.fillStyle='#00ff8820'; hud.fillRect(px,py+14,bw,bh);
-  const ratio=(Math.log2(zf||1))/(Math.log2(10));
-  const filled=THREE.MathUtils.clamp(ratio,0,1)*bw;
-  hud.fillStyle='#00ff88';
-  hud.fillRect(px,py+14,filled,bh);
-  // tick marks
-  hud.strokeStyle='#00ff8840'; hud.lineWidth=1;
-  [1,2,4,8,10].forEach(z=>{
-    const r=(Math.log2(z||1))/(Math.log2(10));
-    const tx=px+r*bw;
-    hud.beginPath(); hud.moveTo(tx,py+10); hud.lineTo(tx,py+24); hud.stroke();
-  });
-  hud.restore();
+// ── 8. LOCK LOST NOTICE ──────────────────────────────────────────
+function drawLockLost() {
+  if (!S.lockLostTimer || performance.now() > S.lockLostTimer) return;
+  const a = Math.min(1,(S.lockLostTimer-performance.now())/400);
+  setFont(16,'900'); txt('TARGET LOST', cx, cy-80, T.lock, a*0.9, 'center');
 }
 
-function drawClockHUD(){
-  const px=90, py=90;
-  const {h,m,s,date,loc}=STATE.clock;
-  const fa=flashAlpha('weather');
+// ── 9. BOTTOM-RIGHT: WEATHER + AQI + POLLEN ──────────────────────
+function drawWeather() {
+  const pw=220, ph=162;
+  const ox=LW-pw-24, oy=LH-ph-24;
+  panel(ox,oy,pw,ph);
 
-  // Panel bg
-  hud.save();
-  hud.fillStyle='rgba(0,10,20,0.55)';
-  hud.fillRect(px-12,py-52,420,160);
-  hud.strokeStyle='#0088ff30'; hud.lineWidth=1;
-  hud.strokeRect(px-12,py-52,420,160);
-  hud.restore();
-
-  // Big time
-  const timeStr=`${h}:${m}:${s}`;
-  const tcol=fa>0?lerpColor('#00aaff','#ffffff',fa):'#00aaff';
-  drawText(timeStr,px,py,tcol,52);
-
-  // Date
-  drawText(date,px,py+42,'#0066aa',22);
-  if(loc) drawText(loc,px,py+68,'#004488',20);
-
-  // Corner decorators
-  hud.save();
-  hud.strokeStyle='#0088ff40'; hud.lineWidth=1;
-  hud.beginPath(); hud.moveTo(px-12,py-52); hud.lineTo(px-12,py-52+14); hud.stroke();
-  hud.beginPath(); hud.moveTo(px-12,py-52); hud.lineTo(px-12+14,py-52); hud.stroke();
-  hud.restore();
-}
-
-function drawWeatherHUD(){
-  const W2=W, H2=H;
-  const px=W2-400, py=H2-480;
-  const {temp,cond,wind,hum,sunrise,sunset}=STATE.weather;
-  const {aqi,aqiLabel,aqiColor,pollen,pollenLabel,pollenColor}=STATE.airQ;
-
-  // Panel bg
-  hud.save();
-  hud.fillStyle='rgba(0,10,20,0.6)';
-  hud.fillRect(px-12,py-12,376,420);
-  hud.strokeStyle='#0088ff30'; hud.lineWidth=1;
-  hud.strokeRect(px-12,py-12,376,420);
-  hud.restore();
-
-  const fa=flashAlpha('weather');
-  const tcol=(k)=>fa>0?lerpColor(k,'#ffffff',fa):k;
-
-  let y=py;
-  const row=(label,val,col='#00aaff',sz=24)=>{
-    drawText(label,px,y,'#0055aa',19);
-    drawText(val,px+200,y,col,sz);
-    y+=38;
+  const rx=ox+pw-10;  // right-align x
+  let y=oy+18;
+  const row=(label,val,col=T.main,sz=11)=>{
+    setFont(9,'700'); txt(label, ox+10, y, T.dim, 0.65);
+    setFont(sz,'900'); txt(val, rx, y, col, 0.95, 'right');
+    y += 17;
   };
 
-  drawText('ENVIRONMENT',px,y,'#0066aa88',18); y+=28;
-  row('TEMP',temp,tcol('#00aaff'));
-  row('COND',cond,tcol('#88ccff'));
-  row('WIND',wind,tcol('#00aaff'));
-  row('HUMIDITY',hum,tcol('#00aaff'));
-  row('SUNRISE',sunrise,'#ffcc44');
-  row('SUNSET',sunset,'#ff8844');
-
-  // Divider
-  hud.save();
-  hud.strokeStyle='#0088ff40'; hud.lineWidth=1;
-  hud.beginPath(); hud.moveTo(px-8,y); hud.lineTo(px+360,y); hud.stroke();
+  // Temp big
+  setFont(26,'900');
+  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=8;
+  txt(S.weather.temp, rx, oy+28, flashColor(T.main,'weather'), 0.95, 'right');
   hud.restore();
-  y+=14;
+  setFont(10,'900'); txt(S.weather.cond, rx, oy+42, T.main, 0.75, 'right');
+  y = oy+60;
 
-  const faq=flashAlpha('aqi');
-  const aqiC=faq>0?lerpColor(aqiColor,'#ffffff',faq):aqiColor;
-  const polC=faq>0?lerpColor(pollenColor,'#ffffff',faq):pollenColor;
+  row('WIND', S.weather.wind);
+  row('HUM',  S.weather.hum);
+  setFont(9,'700'); txt(S.weather.sun, rx, y, T.dim, 0.5, 'right'); y+=14;
 
-  drawText('AQI',px,y,'#0055aa',19);
-  drawText(`${aqi}`,px+140,y,aqiC,28);
-  drawText(aqiLabel,px+200,y,aqiC,20);
-  y+=38;
-
-  drawText('POLLEN',px,y,'#0055aa',19);
-  drawText(`${pollen}`,px+140,y,polC,24);
-  drawText(pollenLabel,px+200,y,polC,20);
-  y+=30;
-
-  // Geo coords small
-  if(STATE.geoLat!==null){
-    drawText(`${STATE.geoLat.toFixed(3)}°N ${STATE.geoLon.toFixed(3)}°E`,px,y,'#003366',17);
-  }
-}
-
-function drawLockLostNotice(){
-  if(!STATE.lockLost) return;
-  const cx=W/2, cy=H/2;
-  drawText('TARGET LOST',cx,cy-100,'#ff4444cc',30,'center');
-}
-
-function drawFrameCorners(){
-  const m=48; const c=28;
-  const col='#00ff8830';
-  hud.save(); hud.strokeStyle=col; hud.lineWidth=1.5;
-  [[m,m],[W-m,m],[m,H-m],[W-m,H-m]].forEach(([x,y])=>{
-    const sx=x===m?1:-1, sy=y===m?1:-1;
-    hud.beginPath();
-    hud.moveTo(x,y+sy*c); hud.lineTo(x,y); hud.lineTo(x+sx*c,y);
-    hud.stroke();
-  });
-  hud.restore();
-}
-
-function drawScanline(){
-  const y=(performance.now()*0.04)%(H+40)-20;
-  hud.save();
-  hud.fillStyle='rgba(0,255,136,0.03)';
-  hud.fillRect(0,y,W,6);
-  hud.restore();
-}
-
-function drawHUD(){
-  hud.clearRect(0,0,W,H);
-  drawScanline();
-  drawFrameCorners();
-  drawClockHUD();
-  drawWeatherHUD();
-  drawZoomHUD();
-  drawTargetOverlay();
-  drawReticle();
-  drawLockLostNotice();
-  hudTex.needsUpdate=true;
-}
-
-// ─── INPUT: KEYBOARD (desktop testing) ────────────────────────────────────────
-window.addEventListener('keydown',e=>{
-  if(e.key==='z'||e.key==='Z') cycleZoom();
-  if(e.key==='l'||e.key==='L') tryLock();
-});
-
-// ─── INPUT: XR CONTROLLERS ────────────────────────────────────────────────────
-function handleXRInput(frame, refSpace){
-  const session=renderer.xr.getSession();
-  if(!session) return;
-  for(const src of session.inputSources){
-    if(src.gamepad){
-      const trig=src.gamepad.buttons[0]?.pressed||false;
-      if(trig && !STATE.prevTriggerPressed) tryLock();
-      if(src.gamepad.buttons[2]?.pressed) cycleZoom();
-      STATE.prevTriggerPressed=trig;
+  // Divider before AQI/pollen
+  if (S.aqi.val !== '--' || S.pollen.val !== '--') {
+    line(ox+8, y, ox+pw-8, y, T.main, 0.12, 1); y+=10;
+    if (S.aqi.val !== '--') {
+      setFont(9,'700'); txt('AQI', ox+10, y, T.dim, 0.65);
+      setFont(11,'900'); txt(`${S.aqi.val}`, rx-55, y, flashColor(S.aqi.color,'aqi'), 0.95, 'right');
+      setFont(9,'700'); txt(S.aqi.label, rx, y, flashColor(S.aqi.color,'aqi'), 0.85, 'right');
+      y+=16;
+    }
+    if (S.pollen.val !== '--') {
+      setFont(9,'700'); txt('POLLEN', ox+10, y, T.dim, 0.65);
+      setFont(9,'700'); txt(S.pollen.label, rx, y, flashColor(S.pollen.color,'aqi'), 0.85, 'right');
     }
   }
 }
 
-// ─── MAIN LOOP ────────────────────────────────────────────────────────────────
-let frameCount=0;
+// ── 10. BOTTOM-LEFT: MINIMAP ─────────────────────────────────────
+function drawMinimap() {
+  const R=72, mmCx=24+R, mmCy=LH-24-R;
 
-renderer.setAnimationLoop((time, frame)=>{
-  frameCount++;
+  // Background circle
+  hud.save();
+  hud.beginPath(); hud.arc(mmCx,mmCy,R,0,Math.PI*2); hud.clip();
+  rect(mmCx-R,mmCy-R,R*2,R*2,'rgba(0,5,10,0.88)');
 
-  updateZoom();
+  if (S.geoLat==null) {
+    setFont(9,'900'); txt('NO SIGNAL',mmCx,mmCy+4,T.dim,0.4,'center'); hud.restore();
+  } else {
+    const hdg = S.headingSmooth??0;
+    const headRad = hdg*Math.PI/180;
+    const MM_RANGE=220;
+    const pxPerM = R/MM_RANGE;
+    const txf=lon2tf(S.geoLon,MAP_ZOOM), tyf=lat2tf(S.geoLat,MAP_ZOOM);
+    const txi=Math.floor(txf), tyi=Math.floor(tyf);
+    const fracX=txf-txi, fracY=tyf-tyi;
+    const mpp=156543.03392*Math.cos(S.geoLat*Math.PI/180)/Math.pow(2,MAP_ZOOM);
+    const tileSize=256*(mpp/pxPerM/256);  // tile display size in logical px
 
-  if(frameCount%2===0){
-    doRaycast();
+    hud.save(); hud.translate(mmCx,mmCy); hud.rotate(-headRad);
+    hud.globalAlpha=0.35;
+    for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
+      const t=getTile(txi+dx,tyi+dy,MAP_ZOOM);
+      if(t.loaded){
+        const px=(dx-fracX)*tileSize,py=(dy-fracY)*tileSize;
+        hud.drawImage(t.img,px-tileSize/2,py-tileSize/2,tileSize,tileSize);
+      }
+    }
+
+    // Breadcrumbs
+    if (S.crumbs.length>1) {
+      hud.strokeStyle=T.accent; hud.lineWidth=2; hud.globalAlpha=0.55;
+      hud.lineCap='round'; hud.lineJoin='round'; hud.beginPath();
+      S.crumbs.forEach((c,i)=>{
+        const p=llToPx(c.lat,c.lon,pxPerM);
+        i===0 ? hud.moveTo(p.x,p.y) : hud.lineTo(p.x,p.y);
+      });
+      hud.stroke();
+    }
+    hud.restore();
+
+    hud.restore(); // restore clip
+
+    // Grid rings
+    hud.save(); hud.strokeStyle=T.main; hud.lineWidth=0.6;
+    [0.4,0.7,1.0].forEach(f=>{
+      hud.globalAlpha=0.07; hud.beginPath(); hud.arc(mmCx,mmCy,R*f,0,Math.PI*2); hud.stroke();
+    });
+    // Cross
+    hud.globalAlpha=0.08; hud.lineWidth=0.5;
+    line(mmCx-R,mmCy,mmCx+R,mmCy,T.main,0.08,0.6);
+    line(mmCx,mmCy-R,mmCx,mmCy+R,T.main,0.08,0.6);
+    hud.restore();
+
+    // Cardinal labels
+    const CARD=[{l:'N',a:0,col:T.accent},{l:'E',a:90},{l:'S',a:180},{l:'W',a:270}];
+    const hdg2=S.headingSmooth??0;
+    setFont(8,'900'); hud.textAlign='center'; hud.textBaseline='middle';
+    CARD.forEach(cd=>{
+      const ang=(cd.a-hdg2)*Math.PI/180, r=R-9;
+      hud.fillStyle=cd.col||T.main; hud.globalAlpha=cd.l==='N'?1:0.4;
+      hud.fillText(cd.l, mmCx+Math.sin(ang)*r, mmCy-Math.cos(ang)*r);
+    });
+
+    // Player dot
+    hud.fillStyle='#fff'; hud.globalAlpha=0.9; hud.beginPath(); hud.arc(mmCx,mmCy,3.5,0,Math.PI*2); hud.fill();
+    hud.fillStyle=T.main; hud.globalAlpha=1; hud.beginPath(); hud.arc(mmCx,mmCy,2,0,Math.PI*2); hud.fill();
   }
+
+  // Border ring
+  hud.save(); hud.strokeStyle=T.main; hud.lineWidth=1.5; hud.globalAlpha=0.45;
+  hud.beginPath(); hud.arc(mmCx,mmCy,R,0,Math.PI*2); hud.stroke(); hud.restore();
+
+  // Heading label below
+  const hdgLbl = S.headingSmooth!=null ? `HDG ${Math.round(S.headingSmooth).toString().padStart(3,'0')}°` : 'HDG ---°';
+  setFont(9,'900'); txt(hdgLbl, mmCx, mmCy+R+14, T.main, 0.55, 'center');
+
+  // Speed below minimap
+  const spdStr = S.speedKmh.toFixed(1);
+  setFont(18,'900');
+  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=6;
+  txt(spdStr, mmCx, mmCy+R+30, T.main, 0.85, 'center');
+  hud.restore();
+  setFont(8,'700'); txt('KM/H', mmCx, mmCy+R+40, T.dim, 0.4, 'center');
+}
+
+// ── 11. CENTRE HUD STATUS BAR ────────────────────────────────────
+function drawStatusBar() {
+  const locked=S.lockTarget!=null, hover=S.hoverHit!=null;
+  if (!locked && !hover) return;
+  const label=locked ? `◆ LOCKED: ${S.lockTarget.userData.hudName}` :
+                       `◉ HOVER: ${S.hoverHit.object.userData.hudName}`;
+  const col=locked?T.lock:T.warn;
+  setFont(11,'900'); hud.textAlign='center';
+  const tw=hud.measureText(label).width+20;
+  rect(cx-tw/2,LH-62,tw,18,'rgba(0,5,10,0.8)');
+  strokeRect(cx-tw/2,LH-62,tw,18,col,0.3,1);
+  txt(label,cx,LH-48,col,0.9,'center');
+}
+
+// ── FULL FRAME DRAW ──────────────────────────────────────────────
+function drawHUD() {
+  cls();
+  drawScanlines();
+  drawCorners();
+  drawCompass();
+  drawClock();
+  drawZoom();
+  drawMinimap();
+  drawWeather();
+  drawTargetOverlay();
+  drawReticle();
+  drawLockLost();
+  drawStatusBar();
+  hudTex.needsUpdate = true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  KEYBOARD INPUT (desktop testing)
+// ═══════════════════════════════════════════════════════════════════
+window.addEventListener('keydown', e => {
+  if (e.key==='z'||e.key==='Z') cycleZoom();
+  if (e.key==='l'||e.key==='L') tryLock();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  MAIN RENDER LOOP
+// ═══════════════════════════════════════════════════════════════════
+let frameN = 0;
+
+renderer.setAnimationLoop((time, frame) => {
+  frameN++;
+  const now = performance.now();
+
+  updateZoom(now);
+  updateHeading();
+  smoothPose();
 
   // Animate targets
-  selectableMeshes.forEach((m,i)=>{
-    m.rotation.y+=0.003*(i%2===0?1:-1);
-    m.position.y+=Math.sin(time*0.001+i)*0.0008;
+  selectables.forEach((m,i) => {
+    m.rotation.y += 0.004 * (i%2===0?1:-1);
+    m.position.y  = targetDefs[i].pos[1] + Math.sin(time*.001+i*.9)*.035;
   });
 
-  drawHUD();
+  // Animate particles
+  scene.children.forEach(obj => {
+    if (obj.userData.floatSeed !== undefined) {
+      obj.position.y += Math.sin(time*.0008 + obj.userData.floatSeed) * .0004;
+      obj.rotation.y += .002;
+    }
+  });
 
-  if(STATE.inXR && frame){
-    handleXRInput(frame);
-  }
+  // Raycast every 2nd frame
+  if (frameN % 2 === 0) doRaycast();
+
+  // XR controller input
+  if (S.inVR && frame) handleXRInput(frame);
+
+  drawHUD();
 
   renderer.render(scene, camera);
 });
 
-// ─── XR START ─────────────────────────────────────────────────────────────────
-const startBtn=document.getElementById('startBtn');
-const overlay=document.getElementById('overlay');
-const statusEl=document.getElementById('status');
-
-startBtn.addEventListener('click', async()=>{
-  if(!navigator.xr){ statusEl.textContent='WebXR not available'; return; }
-
-  // Try VR first, fallback AR
-  let mode='immersive-vr';
-  const vrOk=await navigator.xr.isSessionSupported('immersive-vr').catch(()=>false);
-  if(!vrOk){
-    const arOk=await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false);
-    if(!arOk){ statusEl.textContent='No XR support'; return; }
-    mode='immersive-ar';
+// ═══════════════════════════════════════════════════════════════════
+//  XR CONTROLLER INPUT
+// ═══════════════════════════════════════════════════════════════════
+function handleXRInput(frame) {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  let trigger=false, btnA=false;
+  for (const src of session.inputSources) {
+    if (!src.gamepad) continue;
+    const gp = src.gamepad;
+    if (gp.buttons[0]?.pressed) trigger=true;
+    if (gp.buttons[4]?.pressed || gp.buttons[2]?.pressed) btnA=true;
   }
+  if (trigger && !S.prevTrigger) tryLock();
+  if (btnA   && !S.prevBtnA)   cycleZoom();
+  S.prevTrigger = trigger;
+  S.prevBtnA    = btnA;
+}
 
-  try{
-    const session=await navigator.xr.requestSession(mode,{
-      optionalFeatures:['hand-tracking','local-floor','bounded-floor']
+// ═══════════════════════════════════════════════════════════════════
+//  VR SESSION — IMMERSIVE-VR ONLY
+// ═══════════════════════════════════════════════════════════════════
+const enterBtn    = document.getElementById('enterBtn');
+const statusMsg   = document.getElementById('statusMsg');
+const launchScreen= document.getElementById('launchScreen');
+
+// Check support
+(async () => {
+  if (!navigator.xr) {
+    statusMsg.textContent='WebXR not available in this browser.'; return;
+  }
+  const vrOk = await navigator.xr.isSessionSupported('immersive-vr').catch(()=>false);
+  if (vrOk) {
+    enterBtn.disabled = false;
+    statusMsg.textContent='Quest 3 ready · trigger=lock · A=zoom · Z/L on keyboard';
+  } else {
+    enterBtn.disabled = true;
+    statusMsg.textContent='immersive-vr not supported · running desktop preview';
+  }
+})();
+
+window.enterVR = async function() {
+  if (!navigator.xr) { statusMsg.textContent='WebXR unavailable'; return; }
+
+  try {
+    const session = await navigator.xr.requestSession('immersive-vr', {
+      optionalFeatures: ['local-floor','bounded-floor','hand-tracking'],
     });
-    renderer.xr.setSession(session);
-    STATE.inXR=true; STATE.xrSession=session;
-    overlay.style.display='none';
-    session.addEventListener('end',()=>{ STATE.inXR=false; overlay.style.display='flex'; });
-  }catch(err){
-    statusEl.textContent='XR error: '+err.message;
-  }
-});
 
-// ─── RESIZE ───────────────────────────────────────────────────────────────────
-window.addEventListener('resize',()=>{
-  renderer.setSize(window.innerWidth,window.innerHeight);
-  camera.aspect=window.innerWidth/window.innerHeight;
+    // Make renderer XR-compatible
+    await renderer.xr.setSession(session);
+    S.inVR = true; S.xrSession = session;
+    launchScreen.style.display = 'none';
+
+    // Resize HUD canvas to match XR framebuffer
+    session.addEventListener('visibilitychange', () => {});
+    session.addEventListener('end', () => {
+      S.inVR = false; S.xrSession = null;
+      launchScreen.style.display = 'flex';
+      enterBtn.textContent = '◈ ENTER VR';
+    });
+
+    // After first frame, query XR viewport resolution and upscale HUD canvas
+    const origAnimLoop = renderer.xr.getSession;
+    const firstFrameHook = () => {
+      const gl = renderer.getContext();
+      const baseLayer = session.renderState.baseLayer;
+      if (baseLayer) {
+        // Per-eye resolution — scale HUD canvas to match
+        const vp = baseLayer.getViewport(session.renderState.layers?.[0]);
+        // The WebGLLayer framebuffer is at XR resolution; our HUD needs to match
+        // We use the framebuffer dimensions for physical pixel count
+        const fbW = baseLayer.framebufferWidth;
+        const fbH = baseLayer.framebufferHeight;
+        if (fbW && fbH && (fbW !== hudCanvas.width || fbH !== hudCanvas.height)) {
+          hudCanvas.width  = fbW;
+          hudCanvas.height = fbH;
+          hud.resetTransform();
+          // Scale so logical coords (HUD_LW×HUD_LH) fill the framebuffer
+          hud.scale(fbW/HUD_LW, fbH/HUD_LH);
+          hudTex.needsUpdate = true;
+        }
+      }
+    };
+    // Hook into first animation frame
+    session.requestAnimationFrame(() => { firstFrameHook(); });
+
+    enterBtn.textContent = '◈ EXIT VR';
+
+  } catch(err) {
+    statusMsg.textContent = `VR Error: ${err.message}`;
+    console.error('XR error:', err);
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════════════════════════
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   resizeHudPlane();
 });
+
 </script>
 </body>
 </html>
