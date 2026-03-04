@@ -37,7 +37,6 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
 .tr{position:fixed;top:18px;right:18px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;z-index:10;}
 .stat{display:flex;align-items:center;gap:7px;}
-/* BOLDER labels */
 .slbl{font-size:.62rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.85;letter-spacing:.15em;}
 .sbar{width:64px;height:4px;background:rgba(255,255,255,.05);border:1px solid var(--c);overflow:hidden;}
 .sbar{border-color:var(--c);opacity-border:.2;}
@@ -53,7 +52,6 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
 .bl{position:fixed;bottom:18px;left:18px;display:flex;flex-direction:column;gap:3px;z-index:10;}
 .loc-row{display:flex;gap:6px;align-items:baseline;}
-/* BOLDER lat/lon labels */
 .lloc{font-size:.62rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.8;letter-spacing:.14em;width:28px;}
 .lval{font-size:.68rem;font-weight:700;color:var(--c);letter-spacing:.03em;}
 .gps-status{font-size:.58rem;font-weight:900;font-family:'Orbitron',monospace;letter-spacing:.14em;margin-top:2px;}
@@ -64,14 +62,12 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
 #poiPanel{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:3px;max-width:210px;}
 .poi-hdr{font-size:.5rem;font-weight:900;font-family:'Orbitron',monospace;letter-spacing:.2em;color:var(--c);opacity:.6;margin-bottom:2px;}
-/* BOLDER POI rows */
 .poi-row{font-size:.58rem;font-weight:700;color:var(--c);letter-spacing:.04em;display:flex;gap:5px;align-items:baseline;opacity:.95;}
 .poi-dist{opacity:.65;min-width:40px;font-weight:900;}
 
 .br{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:4px;align-items:flex-end;z-index:10;}
 .temp{font-family:'Orbitron',monospace;font-size:1.4rem;font-weight:700;color:var(--c);text-shadow:var(--glow);}
 .cond{font-size:.68rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.9;letter-spacing:.16em;}
-/* BOLDER wind/hum */
 .wrow{font-size:.64rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.85;display:flex;gap:6px;align-items:center;}
 .wval{opacity:1;}
 .sunrow{font-size:.56rem;font-weight:700;color:var(--c);opacity:.55;}
@@ -119,6 +115,18 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 .alert.info {border-color:var(--c);color:var(--c);opacity:.85;}
 .alert.danger{border-color:rgba(255,23,68,.45);color:#ff1744;}
 @keyframes alert-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+
+/* ── MINIMAP ── */
+#minimapWrap{
+  position:fixed;right:18px;top:50%;transform:translateY(-50%);
+  z-index:12;pointer-events:none;
+}
+#minimapCanvas{display:block;}
+.mm-heading-lbl{
+  font-family:'Orbitron',monospace;font-size:.5rem;font-weight:900;
+  color:var(--c);letter-spacing:.2em;text-align:center;margin-top:4px;
+  opacity:.6;
+}
 
 /* THEME PICKER */
 #themePicker{position:fixed;bottom:54px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:100;align-items:center;}
@@ -221,6 +229,12 @@ body{color:var(--c);font-family:'Share Tech Mono',monospace;}
 
 <div class="alerts" id="alerts"></div>
 
+<!-- ── MINIMAP (DOM mode) ── -->
+<div id="minimapWrap">
+  <canvas id="minimapCanvas" width="160" height="160"></canvas>
+  <div class="mm-heading-lbl" id="mmHeadingLbl">HDG ---°</div>
+</div>
+
 <div id="nvPanel">
   <div id="nvSub">
     <div class="nv-row">
@@ -260,7 +274,6 @@ var THEMES={
 };
 var currentTheme='cyan';
 function setTheme(name,btn){
-  // Manual click while NV is running: kill NV cleanly
   if(btn&&nvActive){
     nvActive=false; nvCurrentMode=''; nvBrightSamples=[];
     clearInterval(nvLoopId); nvLoopId=null;
@@ -294,27 +307,35 @@ var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','D
 var GPS_TIMEOUT=60000,GPS_RETRY_DELAY=5000,gpsRetryTimer=null,gpsAttempts=0,GPS_MAX_ATTEMPTS=10;
 var poiData=[];
 var cpuSamples=[];
-var lastGpsState=''; // for GPS lock pulse detection
+var lastGpsState='';
 var threatFetched=false;
-/* glitch chars */
 var GLITCH_CHARS='!@#$%^&*<>?/\\|[]{}01';
-/* 2D canvas FX state */
-var c2dSweepY=0;           // scan line sweep position in hud2d space
-var c2dThemeSweepX=-9999;  // theme wipe X position (-9999 = inactive)
+var c2dSweepY=0;
+var c2dThemeSweepX=-9999;
 var c2dThemeSweeping=false;
+
+/* ── MINIMAP STATE ── */
+var mapHeading=0;           // compass heading in degrees (0=north)
+var mapHeadingRaw=null;     // null until first reading
+var mapTileCache={};        // key: 'z/x/y' → {img, loaded, error}
+var MAP_ZOOM=17;
+var MM_DOM_RADIUS=76;       // DOM minimap radius (canvas is 160×160, so 80-4 padding)
+var mmDomCanvas=null,mmDomCtx=null;
+var lastTileCenterX=-1,lastTileCenterY=-1;
+// How many real-world meters the minimap radius represents
+var MM_RANGE_METERS=250;
 
 /* ── NV AUTO STATE ── */
 var nvActive=false,nvStream=null,nvVideo=null,nvCanvas=null,nvCtx=null;
 var nvDarkTheme='red',nvLightTheme='cyan';
 var nvBrightSamples=[],NV_SAMPLE_SIZE=8;
-var nvCurrentMode=''; // 'dark' | 'light'
-// Hysteresis thresholds (0–255 perceived luminance)
+var nvCurrentMode='';
 var NV_DARK_THRESH=55,NV_LIGHT_THRESH=90;
 
 /* ── BOOT ── */
 window.addEventListener('DOMContentLoaded',function(){
   startClock(); startBattery(); startGPS(); startSysStats(); startNetwork();
-  startScanLines();
+  startScanLines(); startHeading(); startDOMMinimap();
   nvCanvas=document.createElement('canvas'); nvCanvas.width=32; nvCanvas.height=32;
   nvCtx=nvCanvas.getContext('2d',{willReadFrequently:true});
   if(isIOS) document.getElementById('permBtn').style.display='block';
@@ -341,7 +362,6 @@ function setVal(id,val){
   if(!el)return;
   var strVal=String(val);
   if(el.textContent===strVal)return;
-  // Cancel any in-progress glitch
   if(glitchTimers[id]){clearInterval(glitchTimers[id]);delete glitchTimers[id];}
   var target=strVal, len=Math.max(target.length,2), frames=0, maxFrames=8;
   glitchTimers[id]=setInterval(function(){
@@ -350,7 +370,6 @@ function setVal(id,val){
       clearInterval(glitchTimers[id]); delete glitchTimers[id];
       el.textContent=target; flashEl(el); return;
     }
-    // Scramble — progressively reveal from left
     var revealed=Math.floor((frames/maxFrames)*len);
     var out='';
     for(var i=0;i<len;i++){
@@ -450,7 +469,7 @@ function doWatch(){
       document.getElementById('lonV').textContent=lon.toFixed(5)+'°';
       setGPS('LOCKED','locked');
       fetchWeather();
-      if(moved){reverseGeocode(); fetchPOIs();}
+      if(moved){reverseGeocode(); fetchPOIs(); preloadMapTiles();}
     },
     function(e){
       try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}geoWatchId=null;
@@ -472,6 +491,33 @@ function setGPS(msg,cls){
     if(!threatFetched){threatFetched=true; setTimeout(fetchThreat,1500);}
   } else if(cls!=='locked'){
     lastGpsState=cls;
+  }
+}
+
+/* ── HEADING (COMPASS) ── */
+function startHeading(){
+  // Prefer absolute orientation (Android / Quest 3)
+  if('ondeviceorientationabsolute' in window){
+    window.addEventListener('deviceorientationabsolute',onHeading,true);
+  }
+  // Fallback: standard event (iOS uses webkitCompassHeading)
+  window.addEventListener('deviceorientation',onHeadingFallback);
+}
+function onHeading(e){
+  if(e.alpha!=null){
+    mapHeading=(360-e.alpha)%360;
+    mapHeadingRaw=mapHeading;
+  }
+}
+function onHeadingFallback(e){
+  // Only use if we haven't gotten absolute readings
+  if(e.webkitCompassHeading!=null){
+    mapHeading=e.webkitCompassHeading;
+    mapHeadingRaw=mapHeading;
+  } else if(mapHeadingRaw===null&&e.alpha!=null){
+    // Non-absolute alpha — better than nothing
+    mapHeading=(360-e.alpha)%360;
+    mapHeadingRaw=mapHeading;
   }
 }
 
@@ -593,20 +639,15 @@ function startScanLines(){
     if(cvs.width!==W||cvs.height!==H){cvs.width=W;cvs.height=H;}
     ctx.clearRect(0,0,W,H);
     var C=TC();
-    // Static horizontal scan lines every 4px
     ctx.strokeStyle=C;
     for(var y=0;y<H;y+=4){
-      ctx.globalAlpha=0.028;
-      ctx.lineWidth=1.3;
+      ctx.globalAlpha=0.028;ctx.lineWidth=1.3;
       ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
     }
-    // Moving brighter sweep line
     sweepY+=sweepSpeed;
     if(sweepY>H+60) sweepY=-60;
     var grad=ctx.createLinearGradient(0,sweepY-30,0,sweepY+30);
-    grad.addColorStop(0,'transparent');
-    grad.addColorStop(0.5,C);
-    grad.addColorStop(1,'transparent');
+    grad.addColorStop(0,'transparent');grad.addColorStop(0.5,C);grad.addColorStop(1,'transparent');
     ctx.strokeStyle=grad;ctx.globalAlpha=0.07;ctx.lineWidth=2.6;
     ctx.beginPath();ctx.moveTo(0,sweepY);ctx.lineTo(W,sweepY);ctx.stroke();
     ctx.globalAlpha=1;ctx.lineWidth=1;
@@ -616,12 +657,9 @@ function startScanLines(){
 
 /* ── THEME SWEEP ── */
 function themeSweep(){
-  // DOM overlay (non-XR)
   var el=document.getElementById('themeSweep');
   if(el){el.classList.remove('sweeping');void el.offsetWidth;el.classList.add('sweeping');}
-  // 2D canvas (XR)
-  c2dThemeSweepX=0;
-  c2dThemeSweeping=true;
+  c2dThemeSweepX=0;c2dThemeSweeping=true;
 }
 
 /* ── GPS LOCK PULSE ── */
@@ -642,6 +680,242 @@ function fireGPSLockPulse(){
   addAlert('GPS LOCKED','ok');
 }
 
+/* ══════════════════════════════════════════════════════════
+   ██  MINIMAP — OSM TILES + COMPASS + POIs
+   ══════════════════════════════════════════════════════════ */
+
+/* Tile math */
+function lon2tileF(lon,z){return(lon+180)/360*Math.pow(2,z);}
+function lat2tileF(lat,z){return(1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z);}
+
+/* Load & cache a tile image */
+function loadTile(tx,ty,z){
+  var key=z+'/'+tx+'/'+ty;
+  if(mapTileCache[key]) return mapTileCache[key];
+  var entry={img:new Image(),loaded:false,error:false};
+  entry.img.crossOrigin='anonymous';
+  entry.img.onload=function(){entry.loaded=true;};
+  entry.img.onerror=function(){entry.error=true;};
+  entry.img.src='https://tile.openstreetmap.org/'+z+'/'+tx+'/'+ty+'.png';
+  mapTileCache[key]=entry;
+  return entry;
+}
+
+/* Preload 3×3 grid around current position */
+function preloadMapTiles(){
+  if(lat==null)return;
+  var cx=Math.floor(lon2tileF(lon,MAP_ZOOM));
+  var cy=Math.floor(lat2tileF(lat,MAP_ZOOM));
+  if(cx===lastTileCenterX&&cy===lastTileCenterY) return;
+  lastTileCenterX=cx; lastTileCenterY=cy;
+  for(var dy=-1;dy<=1;dy++)
+    for(var dx=-1;dx<=1;dx++)
+      loadTile(cx+dx,cy+dy,MAP_ZOOM);
+}
+
+/**
+ * drawMinimap — renders the full minimap onto any 2D context.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} cx  center X pixel
+ * @param {number} cy  center Y pixel
+ * @param {number} R   radius in pixels
+ */
+function drawMinimap(ctx,cx,cy,R){
+  if(lat==null&&mapHeadingRaw==null){
+    // No data yet — draw placeholder
+    ctx.save();
+    ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.clip();
+    ctx.fillStyle='rgba(0,0,0,.88)';ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle=TC();ctx.lineWidth=1.5;ctx.globalAlpha=0.3;
+    ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle=TC();ctx.globalAlpha=0.4;
+    ctx.font='900 9px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('NO SIGNAL',cx,cy);ctx.textAlign='start';ctx.textBaseline='alphabetic';ctx.globalAlpha=1;
+    return;
+  }
+
+  var C=TC(),C3=TC3();
+  var headRad=mapHeading*Math.PI/180;
+
+  /* ── Clip circle ── */
+  ctx.save();
+  ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.clip();
+
+  /* Dark base */
+  ctx.fillStyle='rgba(0,0,0,.92)';
+  ctx.fillRect(cx-R-1,cy-R-1,R*2+2,R*2+2);
+
+  /* ── Draw OSM tiles (heading-up rotation) ── */
+  if(lat!=null){
+    var tileXf=lon2tileF(lon,MAP_ZOOM);
+    var tileYf=lat2tileF(lat,MAP_ZOOM);
+    var tileXi=Math.floor(tileXf);
+    var tileYi=Math.floor(tileYf);
+    var fracX=tileXf-tileXi;
+    var fracY=tileYf-tileYi;
+
+    // Meters-per-pixel at this zoom & latitude
+    var mpp=156543.03392*Math.cos(lat*Math.PI/180)/Math.pow(2,MAP_ZOOM);
+    // How many screen pixels per OSM tile pixel
+    var scale=mpp/(MM_RANGE_METERS/R);
+    var tileDisplaySize=256*scale;
+
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(-headRad); // heading-up
+
+    ctx.globalAlpha=0.38;
+    for(var dy=-2;dy<=2;dy++){
+      for(var dx=-2;dx<=2;dx++){
+        var tile=loadTile(tileXi+dx,tileYi+dy,MAP_ZOOM);
+        if(tile&&tile.loaded){
+          var px=(dx-fracX)*tileDisplaySize;
+          var py=(dy-fracY)*tileDisplaySize;
+          ctx.drawImage(tile.img,px-tileDisplaySize/2,py-tileDisplaySize/2,tileDisplaySize,tileDisplaySize);
+        }
+      }
+    }
+    ctx.globalAlpha=1;
+
+    /* Theme colour tint overlay */
+    ctx.globalAlpha=0.06;
+    ctx.fillStyle=C;
+    ctx.fillRect(-R*2,-R*2,R*4,R*4);
+    ctx.globalAlpha=1;
+
+    /* ── POI dots ── */
+    var pxPerMeter=R/MM_RANGE_METERS;
+    poiData.forEach(function(poi){
+      var a=poi.bear*Math.PI/180; // bearing from north, clockwise
+      var d=poi.dist*pxPerMeter;
+      if(d>R*0.92) return; // clip far POIs
+      var px=Math.sin(a)*d;
+      var py=-Math.cos(a)*d;
+      // Outer glow
+      ctx.fillStyle=C;ctx.globalAlpha=0.25;
+      ctx.beginPath();ctx.arc(px,py,5,0,Math.PI*2);ctx.fill();
+      // Inner dot
+      ctx.fillStyle=C;ctx.globalAlpha=0.95;
+      ctx.beginPath();ctx.arc(px,py,2.5,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    });
+
+    ctx.restore(); // un-rotate
+  }
+
+  /* ── Radar rings ── */
+  ctx.strokeStyle=C;ctx.lineWidth=0.6;
+  [0.33,0.66,1.0].forEach(function(f){
+    ctx.globalAlpha=0.08;
+    ctx.beginPath();ctx.arc(cx,cy,R*f,0,Math.PI*2);ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+
+  /* ── Crosshair ── */
+  ctx.strokeStyle=C;ctx.lineWidth=0.5;ctx.globalAlpha=0.12;
+  ctx.beginPath();ctx.moveTo(cx-R,cy);ctx.lineTo(cx+R,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-R);ctx.lineTo(cx,cy+R);ctx.stroke();
+  ctx.globalAlpha=1;
+
+  /* ── Center player dot ── */
+  ctx.fillStyle='#fff';ctx.globalAlpha=0.9;
+  ctx.beginPath();ctx.arc(cx,cy,3.5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=C;ctx.globalAlpha=1;
+  ctx.beginPath();ctx.arc(cx,cy,2,0,Math.PI*2);ctx.fill();
+
+  /* ── Heading cone (field of view indicator) ── */
+  ctx.save();
+  ctx.globalAlpha=0.06;
+  ctx.fillStyle=C;
+  ctx.beginPath();
+  ctx.moveTo(cx,cy);
+  ctx.arc(cx,cy,R*0.85,-Math.PI/2-Math.PI/8,-Math.PI/2+Math.PI/8);
+  ctx.closePath();ctx.fill();
+  ctx.restore();
+
+  ctx.restore(); // un-clip
+
+  /* ── Outer ring ── */
+  ctx.strokeStyle=C;ctx.lineWidth=1.5;ctx.globalAlpha=0.45;
+  ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.stroke();
+  ctx.globalAlpha=1;
+  /* Thin inner ring */
+  ctx.strokeStyle=C;ctx.lineWidth=0.5;ctx.globalAlpha=0.15;
+  ctx.beginPath();ctx.arc(cx,cy,R-3,0,Math.PI*2);ctx.stroke();
+  ctx.globalAlpha=1;
+
+  /* ── Cardinal direction labels (rotate with heading) ── */
+  var cardinals=[
+    {label:'N',angle:0,  col:C3},
+    {label:'E',angle:90, col:C},
+    {label:'S',angle:180,col:C},
+    {label:'W',angle:270,col:C}
+  ];
+  ctx.font='900 8px Orbitron,monospace';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  cardinals.forEach(function(cd){
+    var a=(cd.angle-mapHeading)*Math.PI/180;
+    var r=R-10;
+    var px=cx+Math.sin(a)*r;
+    var py=cy-Math.cos(a)*r;
+    ctx.fillStyle=cd.col;
+    ctx.globalAlpha=cd.label==='N'?1:0.45;
+    ctx.fillText(cd.label,px,py);
+  });
+  ctx.globalAlpha=1;
+  ctx.textAlign='start';ctx.textBaseline='alphabetic';
+
+  /* ── Heading tick marks every 30° ── */
+  ctx.strokeStyle=C;ctx.lineWidth=1;
+  for(var deg=0;deg<360;deg+=30){
+    var a2=(deg-mapHeading)*Math.PI/180;
+    var isMajor=deg%90===0;
+    var r1=R-(isMajor?7:4);
+    var r2=R;
+    ctx.globalAlpha=isMajor?0.5:0.18;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.sin(a2)*r1,cy-Math.cos(a2)*r1);
+    ctx.lineTo(cx+Math.sin(a2)*r2,cy-Math.cos(a2)*r2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  /* ── Heading triangle (always points up = your facing direction) ── */
+  ctx.fillStyle=C;ctx.globalAlpha=0.95;
+  ctx.beginPath();
+  ctx.moveTo(cx,cy-R-7);
+  ctx.lineTo(cx-5,cy-R+1);
+  ctx.lineTo(cx+5,cy-R+1);
+  ctx.closePath();ctx.fill();
+  ctx.globalAlpha=1;
+
+  /* ── Range label ── */
+  ctx.fillStyle=C;ctx.globalAlpha=0.3;
+  ctx.font='700 7px "Share Tech Mono",monospace';ctx.textAlign='center';
+  ctx.fillText(MM_RANGE_METERS+'m',cx,cy+R-5);
+  ctx.textAlign='start';ctx.globalAlpha=1;
+}
+
+/* ── DOM minimap animation loop ── */
+function startDOMMinimap(){
+  mmDomCanvas=document.getElementById('minimapCanvas');
+  mmDomCtx=mmDomCanvas.getContext('2d');
+  var lbl=document.getElementById('mmHeadingLbl');
+  function mmFrame(){
+    requestAnimationFrame(mmFrame);
+    if(xrSession) return; // XR mode uses drawHud2D instead
+    mmDomCtx.clearRect(0,0,mmDomCanvas.width,mmDomCanvas.height);
+    drawMinimap(mmDomCtx,mmDomCanvas.width/2,mmDomCanvas.height/2,MM_DOM_RADIUS);
+    // Update heading label
+    if(mapHeadingRaw!==null){
+      lbl.textContent='HDG '+('00'+Math.round(mapHeading)).slice(-3)+'°';
+    }
+  }
+  mmFrame();
+}
+
+
 /* ── THREAT ASSESSMENT ── */
 function fetchThreat(){
   if(lat==null)return;
@@ -653,7 +927,6 @@ function fetchThreat(){
   function tryFinish(){
     done++;
     if(done<needed)return;
-    // Clamp final score
     score=Math.min(10,Math.max(1,Math.round(score)));
     var col=score<=3?'#76ff03':score<=5?'#ffb300':score<=7?'#ff6d00':'#ff1744';
     var label=score<=3?'LOW':score<=5?'MODERATE':score<=7?'HIGH':'CRITICAL';
@@ -669,7 +942,6 @@ function fetchThreat(){
     else if(score>=5) addAlert('THREAT: '+label,'warn');
   }
 
-  // ── Factor 1: Environmental (weather + AQI — already in DOM) ──
   setTimeout(function(){
     var envScore=0;
     var wc=document.getElementById('wCond').textContent;
@@ -680,7 +952,6 @@ function fetchThreat(){
       var aqi=parseInt(aqiEl.textContent)||0;
       if(aqi>80)envScore+=2; else if(aqi>60)envScore+=1.5; else if(aqi>40)envScore+=0.5;
     }
-    // Time of day factor
     var hr=new Date().getHours();
     if(hr>=23||hr<5){envScore+=1.5;factors.push('NIGHT');}
     else if(hr<7||hr>=21){envScore+=0.5;}
@@ -689,8 +960,6 @@ function fetchThreat(){
     tryFinish();
   },100);
 
-  // ── Factor 2: Crime data via UK Police API (global fallback = POI density) ──
-  // Try UK Police API first (free, no key)
   var crimeUrl='https://data.police.uk/api/crimes-street/all-crime?lat='+lat+'&lng='+lon;
   fetch(crimeUrl)
   .then(function(r){
@@ -699,7 +968,6 @@ function fetchThreat(){
   })
   .then(function(crimes){
     var count=Array.isArray(crimes)?crimes.length:0;
-    // Normalize: 0 crimes=0, 50+=4 points
     var crimeScore=Math.min(4, count/12);
     score+=crimeScore;
     if(count>0) factors.push(count+' CRIMES/MI');
@@ -708,9 +976,8 @@ function fetchThreat(){
     tryFinish();
   })
   .catch(function(){
-    // Fallback: use POI density as urban proxy (more POIs = more activity = slight baseline)
     var urban=poiData.length;
-    score+=(urban>4?0.5:0); // mild urban bonus only
+    score+=(urban>4?0.5:0);
     factors.push('NO CRIME DATA');
     tryFinish();
   });
@@ -744,14 +1011,13 @@ function drawHud2D(){
   function ga(a){ctx.globalAlpha=a;}
   function ga1(){ctx.globalAlpha=1;}
 
-  /* ── SCAN LINES (drawn first, under everything) ── */
+  /* ── SCAN LINES ── */
   ctx.save();
   ctx.strokeStyle=C;
   for(var sl=0;sl<h;sl+=4){
     ctx.globalAlpha=0.032; ctx.lineWidth=1.3;
     ctx.beginPath();ctx.moveTo(0,sl);ctx.lineTo(w,sl);ctx.stroke();
   }
-  // Moving sweep
   c2dSweepY+=0.9; if(c2dSweepY>h+50) c2dSweepY=-50;
   var sg=ctx.createLinearGradient(0,c2dSweepY-25,0,c2dSweepY+25);
   sg.addColorStop(0,'transparent'); sg.addColorStop(0.5,C); sg.addColorStop(1,'transparent');
@@ -815,7 +1081,6 @@ function drawHud2D(){
   ctx.fillStyle=gc.indexOf('locked')>-1?C3:gc.indexOf('denied')>-1?CR:C2;
   ctx.font='900 10px Orbitron,monospace';
   ctx.fillText(gs?gs.textContent:'● GPS ACQUIRING',blX,cy2+32);
-  // Threat panel
   var tvEl=document.getElementById('threatVal');
   if(tvEl&&tvEl.textContent!=='--'&&document.getElementById('threatPanel').style.display!=='none'){
     var ty=cy2-70;
@@ -823,12 +1088,10 @@ function drawHud2D(){
     var tvTxt=tvEl.textContent;
     var tvCol=tvEl.style.color||C;
     glow(tvCol,8);ctx.fillStyle=tvCol;ctx.font='900 13px Orbitron,monospace';ctx.fillText(tvTxt,blX,ty+14);ng();
-    // Threat bar
     var tbEl=document.getElementById('threatBar');
     var tbPct=tbEl?parseFloat(tbEl.style.width)||0:0;
     ctx.fillStyle='rgba(255,255,255,.05)';ctx.fillRect(blX,ty+18,90,3);
     ctx.fillStyle=tvCol;ctx.fillRect(blX,ty+18,90*tbPct/100,3);
-    // Sub factors
     var tsubEl=document.getElementById('threatSub');
     if(tsubEl){ga(0.5);ctx.fillStyle=C;ctx.font='700 9px "Share Tech Mono",monospace';ctx.fillText(tsubEl.textContent,blX,ty+30);ga1();}
   }
@@ -880,6 +1143,18 @@ function drawHud2D(){
   }
   ctx.restore();
 
+  /* ══ MINIMAP (drawn in XR 2D canvas) ══ */
+  var mmR=60;
+  var mmCx=w-mmR-22;
+  var mmCy=h/2;
+  ctx.save();
+  drawMinimap(ctx,mmCx,mmCy,mmR);
+  /* Heading readout below minimap */
+  ctx.fillStyle=C;ga(0.55);ctx.font='900 8px Orbitron,monospace';ctx.textAlign='center';
+  ctx.fillText('HDG '+('00'+Math.round(mapHeading)).slice(-3)+'°',mmCx,mmCy+mmR+12);
+  ctx.textAlign='start';ga1();
+  ctx.restore();
+
   /* ALERTS */
   if(alertsState.length){
     ctx.save();
@@ -894,17 +1169,15 @@ function drawHud2D(){
     ctx.restore();
   }
 
-  /* ── THEME SWEEP OVERLAY (drawn last, on top) ── */
+  /* ── THEME SWEEP OVERLAY ── */
   if(c2dThemeSweeping){
     ctx.save();
-    c2dThemeSweepX+=w*0.07; // advance ~7% of canvas width per frame
+    c2dThemeSweepX+=w*0.07;
     if(c2dThemeSweepX>w*1.5){c2dThemeSweeping=false;c2dThemeSweepX=-9999;}
     else{
       var sw=w*0.25;
       var tg=ctx.createLinearGradient(c2dThemeSweepX-sw,0,c2dThemeSweepX+sw,0);
-      tg.addColorStop(0,'transparent');
-      tg.addColorStop(0.5,'rgba(255,255,255,0.18)');
-      tg.addColorStop(1,'transparent');
+      tg.addColorStop(0,'transparent');tg.addColorStop(0.5,'rgba(255,255,255,0.18)');tg.addColorStop(1,'transparent');
       ctx.fillStyle=tg; ctx.fillRect(0,0,w,h);
     }
     ctx.restore();
@@ -924,7 +1197,6 @@ function setNvLight(name,btn){
   if(btn) btn.classList.add('active');
   if(nvActive&&nvCurrentMode==='light') applyThemeNV(nvLightTheme);
 }
-// Internal theme apply that doesn't kill NV
 function applyThemeNV(name){
   currentTheme=name;
   document.body.className='theme-'+name;
@@ -947,7 +1219,6 @@ async function toggleNV(){
     addAlert('AUTO NV OFF','info');
     return;
   }
-  // Request camera
   try{
     nvStream=await navigator.mediaDevices.getUserMedia({
       video:{facingMode:{ideal:'environment'},width:{ideal:64},height:{ideal:64}}
@@ -955,21 +1226,16 @@ async function toggleNV(){
   }catch(e){
     addAlert('CAM DENIED','warn'); return;
   }
-  // Create video element, append to body hidden
   nvVideo=document.createElement('video');
-  nvVideo.setAttribute('autoplay','');
-  nvVideo.setAttribute('playsinline','');
-  nvVideo.setAttribute('muted','');
+  nvVideo.setAttribute('autoplay','');nvVideo.setAttribute('playsinline','');nvVideo.setAttribute('muted','');
   nvVideo.muted=true;
   nvVideo.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;';
   document.body.appendChild(nvVideo);
   nvVideo.srcObject=nvStream;
   nvVideo.disablePictureInPicture=true;
-  // Prevent browser from pausing video in background
   nvVideo.addEventListener('pause',function(){
-    if(nvActive){var p=nvVideo.play();if(p&&p.catch)p.catch(function(){});}
+    if(nvActive){var p2=nvVideo.play();if(p2&&p2.catch)p2.catch(function(){});}
   });
-  // Play — handle both promise and old-style
   var playResult=nvVideo.play();
   if(playResult&&playResult.catch) playResult.catch(function(){});
 
@@ -979,7 +1245,6 @@ async function toggleNV(){
   statusEl.textContent='● WARMING UP';
   addAlert('AUTO NV ON','ok');
 
-  // Wait up to 3s for video to be ready, then start loop
   var readyWait=0;
   var readyCheck=setInterval(function(){
     readyWait+=100;
@@ -987,7 +1252,7 @@ async function toggleNV(){
       clearInterval(readyCheck);
       statusEl.textContent='● SENSING';
       nvLoopId=setInterval(nvSample,900);
-      nvSample(); // immediate first sample
+      nvSample();
     } else if(readyWait>3000){
       clearInterval(readyCheck);
       statusEl.textContent='● NO SIGNAL';
@@ -997,12 +1262,11 @@ async function toggleNV(){
 
 var nvLoopId=null;
 
-// When tab comes back to foreground, resume video + sample immediately
 document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'&&nvActive&&nvVideo){
-    var p=nvVideo.play();
-    if(p&&p.catch) p.catch(function(){});
-    setTimeout(nvSample,200); // slight delay to let video resume
+    var p2=nvVideo.play();
+    if(p2&&p2.catch) p2.catch(function(){});
+    setTimeout(nvSample,200);
   }
 });
 
@@ -1013,9 +1277,7 @@ function nvSample(){
     var data=nvCtx.getImageData(0,0,32,32).data;
     var sum=0,n=0;
     for(var i=0;i<data.length;i+=16){
-      // perceived luminance
-      sum+=data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114;
-      n++;
+      sum+=data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114;n++;
     }
     var lum=n>0?sum/n:128;
     nvBrightSamples.push(lum);
@@ -1104,6 +1366,7 @@ async function enterXR(){
     xrSession=await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['local'],optionalFeatures:['local-floor']});
     btn.textContent='◈ EXIT AR';
     document.getElementById('themePicker').style.display='none';
+    document.getElementById('minimapWrap').style.display='none';
     document.querySelectorAll('.tl,.tr,.bl,.br,.corner,.alerts,#poiPanel').forEach(function(e){e.style.display='none';});
     document.body.style.background='transparent';
     gl=document.createElement('canvas').getContext('webgl',{xrCompatible:true,alpha:true,antialias:true,premultipliedAlpha:true});
@@ -1115,6 +1378,7 @@ async function enterXR(){
     xrSession.addEventListener('end',function(){
       xrSession=null;xrRefSpace=null;xrLayer=null;
       document.getElementById('themePicker').style.display='flex';
+      document.getElementById('minimapWrap').style.display='';
       document.querySelectorAll('.tl,.tr,.bl,.br,.corner,.alerts,#poiPanel').forEach(function(e){e.style.display='';});
       btn.textContent='◈ ENTER AR MODE';
     });
