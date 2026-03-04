@@ -165,6 +165,7 @@ function setTheme(name,btn){
   themeSweep();
 }
 function TC(){return THEMES[currentTheme].c;}function TC2(){return THEMES[currentTheme].c2;}function TC3(){return THEMES[currentTheme].c3;}function TCR(){return THEMES[currentTheme].cr;}
+function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
 
 /* STATE */
 var lat=null,lon=null,geoWatchId=null,batPct=85,weatherFetched=false;
@@ -504,7 +505,7 @@ var xrSession=null,xrRefSpace=null,xrLayer=null,gl=null;
 var prog=null,vbo=null,ibo=null,tex=null,lastUp=0,mirrorOn=false;
 var hudC=document.getElementById('hud2d');var hCtx=hudC.getContext('2d',{alpha:true});
 var mirC=document.getElementById('hudMirror');var mirCtx=mirC.getContext('2d');
-function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
+
 
 function drawHud2D(){
   var w=hudC.width,h=hudC.height;var ctx=hCtx;ctx.clearRect(0,0,w,h);
