@@ -2,1265 +2,1031 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Quest 3 VR HUD</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quest 3 AR HUD</title>
 <style>
-* { margin:0; padding:0; box-sizing:border-box; }
-html, body { width:100%; height:100%; background:#000; overflow:hidden; }
-#launchScreen {
-  position:fixed; inset:0; display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  background:radial-gradient(ellipse at center, #020d0d 0%, #000 100%);
-  z-index:999;
-}
-#launchScreen h1 {
-  font:900 1rem/1 'Courier New',monospace; letter-spacing:.35em;
-  color:#00e5ff; text-shadow:0 0 20px #00e5ff88; margin-bottom:.4rem;
-  text-transform:uppercase;
-}
-#launchScreen p {
-  font:.62rem/1 'Courier New',monospace; letter-spacing:.18em;
-  color:#00e5ff44; margin-bottom:2.2rem; text-transform:uppercase;
-}
-#enterBtn {
-  font:.7rem/1 'Courier New',monospace; letter-spacing:.22em;
-  color:#00e5ff; border:1px solid #00e5ff55; background:transparent;
-  padding:.65rem 2rem; cursor:pointer; text-transform:uppercase;
-  transition:all .2s; text-shadow:0 0 10px #00e5ff66;
-}
-#enterBtn:hover { background:#00e5ff12; border-color:#00e5ff; }
-#enterBtn:disabled { opacity:.3; cursor:default; }
-#statusMsg {
-  font:.55rem/1 'Courier New',monospace; letter-spacing:.14em;
-  color:#00e5ff44; margin-top:1rem; text-transform:uppercase;
-}
-/* The main renderer canvas fills the window */
-canvas#vrCanvas { display:block; width:100%; height:100%; }
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Courier New',monospace}
+#ui{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;background:#000}
+#ui h1{color:#00e5ff;font-size:.85rem;letter-spacing:.3em;text-transform:uppercase;margin-bottom:.3rem;text-shadow:0 0 14px #00e5ff88}
+#ui p{color:#00e5ff44;font-size:.55rem;letter-spacing:.18em;text-transform:uppercase;margin-bottom:2rem}
+#enterBtn{background:none;border:1px solid #00e5ff55;color:#00e5ff;font-family:'Courier New',monospace;font-size:.65rem;letter-spacing:.2em;padding:.6rem 1.8rem;cursor:pointer;text-transform:uppercase;transition:.2s}
+#enterBtn:hover{border-color:#00e5ff;background:#00e5ff14}
+#enterBtn:disabled{opacity:.3;cursor:not-allowed}
+#msg{margin-top:.8rem;font-size:.5rem;letter-spacing:.12em;color:#00e5ff44;text-transform:uppercase}
+canvas#c{display:block;width:100%;height:100%}
 </style>
 </head>
 <body>
 
-<div id="launchScreen">
-  <h1>⬡ TACTICAL HUD v3.0</h1>
-  <p>Quest 3 · WebXR Immersive-VR · Canvas HUD</p>
-  <button id="enterBtn" onclick="enterVR()">◈ ENTER VR</button>
-  <div id="statusMsg">Checking WebXR support…</div>
+<!-- ─── LAUNCH SCREEN ─────────────────────────────────────────── -->
+<div id="ui">
+  <h1>⬡ AR TACTICAL HUD</h1>
+  <p>Quest 3 · immersive-ar · passthrough</p>
+  <button id="enterBtn" disabled onclick="enterAR()">◈ ENTER AR</button>
+  <div id="msg">checking webxr…</div>
 </div>
 
-<!-- Three.js renderer target -->
-<canvas id="vrCanvas"></canvas>
+<!-- Three.js canvas (opaque on desktop for preview, transparent in AR) -->
+<canvas id="c"></canvas>
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
-  }
-}
-</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
 
-// ═══════════════════════════════════════════════════════════════════
-//  CONSTANTS & TUNING
-// ═══════════════════════════════════════════════════════════════════
-const BASE_FOV        = 75;          // degrees, non-zoomed
-const HUD_Z           = -1.05;       // metres in front of camera
-const ZOOM_LEVELS     = [1,2,4,8,10];
-const ZOOM_DURATION   = 220;         // ms for zoom transition
-const FOV_MIN         = 8;           // safety clamp
-const FOV_MAX         = 90;
-const MAX_HOVER_DIST  = 40;          // metres
-const MAX_LOCK_DIST   = 80;
-const MAX_OCCL_FRAMES = 30;          // frames before lock lost by occlusion
-const SMOOTH_ORI      = 0.10;        // slerp alpha when zoomed
-const SMOOTH_POS      = 0.07;        // lerp alpha when zoomed
-const BBOX_SMOOTH     = 0.18;        // screen bbox lerp
-const WEATHER_MS      = 10*60*1000;
-const AQI_MS          = 30*60*1000;
+/* ══════════════════════════════════════════════════════════════════
+   ARCHITECTURE NOTE
+   ══════════════════════════════════════════════════════════════════
+   Mode: immersive-ar (Quest 3 passthrough).
+   If immersive-ar is not supported this file says so clearly and
+   falls back to a desktop 2-D preview mode — it does NOT silently
+   run immersive-vr.
 
-// HUD canvas logical resolution (will be scaled by devicePixelRatio)
-const HUD_LW = 1920;
-const HUD_LH = 1080;
+   HUD approach:
+     • One offscreen 2-D canvas (hudCvs) sized to XR framebuffer px.
+     • Drawn each frame with 2-D context; uploaded to THREE.CanvasTexture.
+     • Attached to camera as a PlaneGeometry quad at z = -0.9 m.
+     • depthTest:false, depthWrite:false, transparent:true.
+     • Plane geometry size is set ONCE to fill the view at z=-0.9 m
+       using the BASE fov — it never changes.
 
-// ═══════════════════════════════════════════════════════════════════
-//  THEME
-// ═══════════════════════════════════════════════════════════════════
-const T = {
-  main   : '#00e5ff',
-  dim    : '#00e5ff66',
-  dimmer : '#00e5ff33',
-  accent : '#76ff03',
-  warn   : '#ff6d00',
-  danger : '#ff1744',
-  lock   : '#ff4444',
-  good   : '#76ff03',
-};
+   Zoom:
+     • Changes camera.fov ONLY (baseFov / zoomFactor).
+     • The HUD plane scale / position / canvas size NEVER change.
+     • Only the zoom-indicator widget inside the canvas changes.
 
-// ═══════════════════════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════════════════════
-const S = {
-  // zoom
-  zoomIndex:0, zoomFactor:1, zoomTarget:1,
-  zoomStart:0, currentFov:BASE_FOV,
+   AR transparency:
+     • renderer alpha:true, autoClear:false.
+     • scene.background = null (no skybox, no clear colour).
+     • XRWebGLLayer alpha:true.
+     • The passthrough video is composited by the Quest OS underneath.
+   ══════════════════════════════════════════════════════════════════ */
 
-  // smoothed pose (only used when zoom > 1)
-  smoothPos: new THREE.Vector3(),
-  smoothQuat: new THREE.Quaternion(),
-  poseReady: false,
+// ── TUNING ──────────────────────────────────────────────────────
+const BASE_FOV          = 75;    // degrees
+const HUD_DIST          = 0.9;   // metres from camera
+const ZOOM_LEVELS       = [1,2,4,8,10];
+const ZOOM_MS           = 220;   // transition duration
+const FOV_MIN           = 8;
+const FOV_MAX           = 90;
+const MAX_HOVER_M       = 40;
+const MAX_LOCK_M        = 80;
+const OCCL_FRAMES       = 28;
+const SMOOTH_Q          = 0.09;  // slerp alpha (zoom stabilisation)
+const SMOOTH_P          = 0.06;  // lerp alpha
+const BBOX_A            = 0.18;  // screen bbox smoothing
+const WEATHER_TTL       = 10*60*1000;
+const AQI_TTL           = 30*60*1000;
 
-  // targeting
-  hoverHit: null,       // THREE.Intersection or null
-  lockTarget: null,     // THREE.Mesh or null
-  occludeFrames: 0,
-  lockLostTimer: 0,
-  bboxS: {x:0,y:0,w:0,h:0},   // smoothed screen bbox
-  bboxInit: false,
+// HUD logical resolution — drawing uses these coords.
+// Physical canvas is LW*DPR × LH*DPR.
+const LW = 1024, LH = 576;
+const DPR = Math.min(window.devicePixelRatio || 1, 3);
 
-  // reticle anim
-  reticleR: 14,
-  lockAng: 0,
+// Colour palette
+const C   = '#00e5ff';
+const CDM = '#00e5ff55';
+const CDX = '#00e5ff28';
+const CG  = '#76ff03';
+const CW  = '#ff6d00';
+const CR  = '#ff1744';
 
-  // env / clock
-  geoLat: null, geoLon: null,
-  weatherFetched: 0,
-  aqiFetched: 0,
-  clock: { h:'--', m:'--', s:'--', date:'--- -- ----' },
-  weather: { temp:'--°', cond:'------', wind:'-- KM/H', hum:'--%', sun:'↑-- ↓--' },
-  aqi: { val:'--', label:'------', color:T.dim },
-  pollen: { val:'--', label:'------', color:T.dim },
-  area: '', street:'',
-  gpsLabel: '● GPS ACQUIRING',
-
-  // heading (compass)
-  headingTarget: null,
-  headingSmooth: null,
-
-  // speed / odo
-  speedKmh: 0,
-  odoM: 0,
-
-  // flash registry  key → expiry timestamp
-  flashes: {},
-
-  // XR
-  inVR: false,
-  xrSession: null,
-
-  // input
-  prevTrigger: false,
-  prevBtnA: false,
-
-  // breadcrumbs for minimap
-  crumbs: [],
-};
-
-// ═══════════════════════════════════════════════════════════════════
-//  THREE.JS RENDERER
-// ═══════════════════════════════════════════════════════════════════
-const canvas3d = document.getElementById('vrCanvas');
-const renderer = new THREE.WebGLRenderer({ canvas:canvas3d, antialias:true, alpha:false });
-renderer.setPixelRatio(window.devicePixelRatio);
+// ── THREE SETUP ─────────────────────────────────────────────────
+const canvas3 = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({
+  canvas: canvas3,
+  antialias: true,
+  alpha: true,           // needed for AR passthrough
+  premultipliedAlpha: false,
+});
+renderer.setPixelRatio(DPR);
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.autoClear = false;        // we manually clear only depth
 renderer.xr.enabled = true;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05080f);
+scene.background = null;           // TRANSPARENT — passthrough shows through
 
-// Fog for depth
-scene.fog = new THREE.Fog(0x05080f, 40, 120);
-
-// Camera
-const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth/window.innerHeight, 0.05, 200);
+const camera = new THREE.PerspectiveCamera(BASE_FOV,
+  window.innerWidth/window.innerHeight, 0.05, 200);
 camera.position.set(0, 1.6, 0);
 scene.add(camera);
 
-// ═══════════════════════════════════════════════════════════════════
-//  LIGHTING
-// ═══════════════════════════════════════════════════════════════════
-scene.add(new THREE.AmbientLight(0x1a2a3a, 2.0));
-const sun = new THREE.DirectionalLight(0x6688cc, 1.4);
-sun.position.set(8, 14, 6);
-scene.add(sun);
-const rimLight = new THREE.PointLight(0x00e5ff, 0.4, 30);
-rimLight.position.set(-5, 4, -5);
-scene.add(rimLight);
-
-// ═══════════════════════════════════════════════════════════════════
-//  SCENE — SELECTABLE TARGETS
-// ═══════════════════════════════════════════════════════════════════
-const selectables = [];
-const targetDefs = [
-  { name:'ALPHA-1', pos:[  0, 1.6,  -8], geo: new THREE.BoxGeometry(1.2,1.2,1.2),          color:0x0d3d66 },
-  { name:'BETA-2',  pos:[  5, 1.2, -12], geo: new THREE.SphereGeometry(0.85,20,20),         color:0x3d0d55 },
-  { name:'GAMMA-3', pos:[ -4, 2.0, -16], geo: new THREE.CylinderGeometry(.5,.5,2.2,14),     color:0x0d3d1a },
-  { name:'DELTA-4', pos:[  2, 0.8,  -6], geo: new THREE.BoxGeometry(.9,.9,.9),               color:0x3d2800 },
-  { name:'OMEGA-5', pos:[ -6, 1.8, -22], geo: new THREE.SphereGeometry(1.3,20,20),           color:0x003344 },
-  { name:'SIGMA-6', pos:[  8, 2.5, -18], geo: new THREE.ConeGeometry(.7,2,12),               color:0x2d0d0d },
-];
-targetDefs.forEach(d => {
-  const mat = new THREE.MeshStandardMaterial({
-    color: d.color, metalness:0.7, roughness:0.25, emissive:0x000000
-  });
-  const mesh = new THREE.Mesh(d.geo, mat);
-  mesh.position.set(...d.pos);
-  mesh.userData.hudName = d.name;
-  mesh.userData.origEmissive = new THREE.Color(0);
-  scene.add(mesh);
-  selectables.push(mesh);
-});
-
-// Grid floor
-const grid = new THREE.GridHelper(100, 50, 0x0a2030, 0x061018);
-scene.add(grid);
-
-// Ambient floating particles
-for (let i = 0; i < 120; i++) {
-  const s = 0.03 + Math.random()*0.05;
-  const pm = new THREE.Mesh(
-    new THREE.BoxGeometry(s,s,s),
-    new THREE.MeshBasicMaterial({ color:0x00e5ff, transparent:true, opacity:0.15+Math.random()*0.2 })
-  );
-  pm.position.set((Math.random()-.5)*60, .3+Math.random()*5, (Math.random()-.5)*60);
-  pm.userData.floatSeed = Math.random()*Math.PI*2;
-  scene.add(pm);
+// Minimal desktop preview environment (invisible in AR — scene is transparent)
+{
+  const gridMat = new THREE.LineBasicMaterial({color:0x112233,transparent:true,opacity:0.5});
+  scene.add(new THREE.GridHelper(60, 30, 0x0a1f2e, 0x060e16));
+  scene.add(new THREE.AmbientLight(0x223344, 1.5));
+  const dl = new THREE.DirectionalLight(0x7799bb, 1.2);
+  dl.position.set(6,12,4); scene.add(dl);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  HUD CANVAS — HIGH RESOLUTION
-// ═══════════════════════════════════════════════════════════════════
-// We match Quest 3's per-eye resolution (approx 1832×1920), scaled by DPR.
-// On desktop we use window size. The key: HUD canvas is always at least
-// devicePixelRatio × logical size so text is crisp.
-const DPR = window.devicePixelRatio || 1;
-const hudCanvas = document.createElement('canvas');
-// Physical pixel count = logical * DPR for crispness
-hudCanvas.width  = Math.round(HUD_LW * DPR);
-hudCanvas.height = Math.round(HUD_LH * DPR);
-const hud = hudCanvas.getContext('2d', { alpha:true });
-// Scale context so all drawing uses logical coordinates
-hud.scale(DPR, DPR);
+// ── SELECTABLE TARGETS ──────────────────────────────────────────
+const selectables = [];
+const TDEFS = [
+  {name:'ALPHA-1', p:[  0,1.6, -7], g:new THREE.BoxGeometry(1.1,1.1,1.1),       c:0x0d3555},
+  {name:'BETA-2',  p:[  4,1.3,-11], g:new THREE.SphereGeometry(.8,18,18),        c:0x35103d},
+  {name:'GAMMA-3', p:[ -4,1.9,-15], g:new THREE.CylinderGeometry(.5,.5,2,12),    c:0x0d3515},
+  {name:'DELTA-4', p:[  2,.9, -5],  g:new THREE.BoxGeometry(.75,.75,.75),         c:0x2d1e00},
+  {name:'OMEGA-5', p:[ -6,1.9,-20], g:new THREE.SphereGeometry(1.1,18,18),       c:0x003344},
+];
+TDEFS.forEach(d=>{
+  const mat = new THREE.MeshStandardMaterial({
+    color:d.c, metalness:.6, roughness:.3, emissive:new THREE.Color(0,0,0),
+    transparent:true, opacity:.92
+  });
+  const m = new THREE.Mesh(d.g, mat);
+  m.position.set(...d.p); m.userData.n = d.name;
+  scene.add(m); selectables.push(m);
+});
 
-// THREE texture from HUD canvas
-const hudTex = new THREE.CanvasTexture(hudCanvas);
+// ── HUD CANVAS ──────────────────────────────────────────────────
+// Physical size = logical * DPR for crispness
+const hudCvs = document.createElement('canvas');
+hudCvs.width  = LW * DPR;
+hudCvs.height = LH * DPR;
+const H = hudCvs.getContext('2d', {alpha:true});
+// Pre-scale so all draw calls use logical coords
+H.scale(DPR, DPR);
+
+const hudTex = new THREE.CanvasTexture(hudCvs);
 hudTex.minFilter = THREE.LinearFilter;   // no mipmap blur
 hudTex.magFilter = THREE.LinearFilter;
-hudTex.generateMipmaps = false;          // critical for crispness
+hudTex.generateMipmaps = false;
 
-// HUD plane — parented to camera so it moves with head
-const hudPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(1, 1),
-  new THREE.MeshBasicMaterial({
-    map: hudTex,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    blending: THREE.NormalBlending,
-  })
-);
+// HUD plane — parented to camera, FIXED size & position forever
+const hudMat = new THREE.MeshBasicMaterial({
+  map: hudTex, transparent:true,
+  depthTest:false, depthWrite:false,
+  side:THREE.DoubleSide,
+  blending: THREE.NormalBlending,
+});
+const hudPlane = new THREE.Mesh(new THREE.PlaneGeometry(1,1), hudMat);
 hudPlane.renderOrder = 9999;
 camera.add(hudPlane);
 
-function resizeHudPlane() {
-  // Fit the plane to exactly fill the current FOV at distance HUD_Z
-  const aspect = camera.aspect || (window.innerWidth/window.innerHeight);
-  const fovRad = THREE.MathUtils.degToRad(S.currentFov);
-  const planeH = 2 * Math.abs(HUD_Z) * Math.tan(fovRad / 2);
-  const planeW = planeH * aspect;
-  hudPlane.scale.set(planeW, planeH, 1);
-  hudPlane.position.set(0, 0, HUD_Z);
-}
-resizeHudPlane();
+// Size plane to exactly fill fov at HUD_DIST — computed ONCE from BASE_FOV
+// Never changes when zoom changes. Zoom only touches camera.fov.
+(function sizeHudPlane(){
+  const aspect = window.innerWidth / window.innerHeight;
+  const fovRad = THREE.MathUtils.degToRad(BASE_FOV);
+  const h = 2 * HUD_DIST * Math.tan(fovRad/2);
+  const w = h * aspect;
+  hudPlane.scale.set(w, h, 1);
+  hudPlane.position.set(0, 0, -HUD_DIST);
+})();
 
-// ═══════════════════════════════════════════════════════════════════
-//  RAYCASTER
-// ═══════════════════════════════════════════════════════════════════
-const raycaster = new THREE.Raycaster();
-const _fwd = new THREE.Vector3();
-const _box3 = new THREE.Box3();
-const _v3   = new THREE.Vector3();
+// ── RESIZE ──────────────────────────────────────────────────────
+window.addEventListener('resize', ()=>{
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  // Do NOT resize hudPlane — it's fixed
+});
 
-// ═══════════════════════════════════════════════════════════════════
-//  ZOOM
-// ═══════════════════════════════════════════════════════════════════
-function cycleZoom() {
-  S.zoomIndex = (S.zoomIndex + 1) % ZOOM_LEVELS.length;
-  S.zoomTarget = ZOOM_LEVELS[S.zoomIndex];
-  S.zoomStart  = performance.now();
+// ── RAYCASTER ───────────────────────────────────────────────────
+const RC = new THREE.Raycaster();
+const _fwd  = new THREE.Vector3();
+const _bx   = new THREE.Box3();
+const _v    = new THREE.Vector3();
+
+// ══════════════════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════════════════
+const S = {
+  // Zoom — ONLY changes camera.fov, nothing else
+  zi:0, zf:1, zt:1, zStart:0,
+
+  // Smoothed pose (only active when zoom>1)
+  sPos: new THREE.Vector3(),
+  sQuat: new THREE.Quaternion(),
+  poseOk: false,
+
+  // Targeting
+  hover: null,         // THREE.Intersection
+  lock:  null,         // THREE.Mesh
+  occN:  0,
+  bboxS: {x:0,y:0,w:0,h:0},
+  bboxOk: false,
+  lockLostUntil: 0,
+
+  // Reticle anim
+  retR: 13,
+  lockAng: 0,
+
+  // Flash
+  flashes: {},
+
+  // Env / clock
+  lat:null, lon:null,
+  area:'', street:'',
+  gpsLabel:'● GPS ACQUIRING',
+  heading: null,       // smoothed heading deg
+
+  // Weather (all strings, '' = not loaded)
+  wTemp:'--°', wCond:'-------', wWind:'-- km/h', wHum:'--%', wSun:'↑-- ↓--',
+  wFetched:0,
+
+  // AQI
+  aqiVal:'--', aqiLabel:'------', aqiColor:CDM,
+  pollenVal:'--', pollenLabel:'------', pollenColor:CDM,
+  aqiFetched:0,
+
+  // Speed
+  spdKmh:0, odoM:0,
+  _spdSamples:[], _lastLL:null, _lastT:null,
+
+  // Breadcrumbs for minimap
+  crumbs:[],
+
+  // Input
+  prevTrig:false, prevBtnA:false,
+
+  // Scanline
+  sweepY:0,
+
+  // XR
+  inAR: false,
+};
+
+// ══════════════════════════════════════════════════════════════════
+//  ZOOM  ← changes ONLY camera.fov
+// ══════════════════════════════════════════════════════════════════
+function cycleZoom(){
+  S.zi = (S.zi+1) % ZOOM_LEVELS.length;
+  S.zt = ZOOM_LEVELS[S.zi];
+  S.zStart = performance.now();
   flash('zoom');
 }
 
-function easeInOut(t) { return t<0.5 ? 2*t*t : 1-(-2*t+2)**2/2; }
+function eio(t){ return t<.5?2*t*t:1-(-2*t+2)**2/2; }
 
-function updateZoom(now) {
-  const t = Math.min(1, (now - S.zoomStart) / ZOOM_DURATION);
-  const e = easeInOut(t);
-  S.zoomFactor = S.zoomFactor + (S.zoomTarget - S.zoomFactor) * e;
-  if (t >= 1) S.zoomFactor = S.zoomTarget;
-  S.currentFov = THREE.MathUtils.clamp(BASE_FOV / S.zoomFactor, FOV_MIN, FOV_MAX);
-  camera.fov = S.currentFov;
+function tickZoom(){
+  const t = Math.min(1,(performance.now()-S.zStart)/ZOOM_MS);
+  S.zf += (S.zt - S.zf) * eio(t);
+  if(t>=1) S.zf = S.zt;
+  // Only change FOV — HUD plane is never touched
+  camera.fov = THREE.MathUtils.clamp(BASE_FOV/S.zf, FOV_MIN, FOV_MAX);
   camera.updateProjectionMatrix();
-  resizeHudPlane();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  POSE SMOOTHING (only when zoomed > 1)
-// ═══════════════════════════════════════════════════════════════════
-function smoothPose() {
-  if (!S.poseReady) {
-    S.smoothPos.copy(camera.position);
-    S.smoothQuat.copy(camera.quaternion);
-    S.poseReady = true;
-    return;
+// ── POSE SMOOTHING (stabilise view at zoom > 1) ─────────────────
+function tickSmooth(){
+  if(!S.poseOk){
+    S.sPos.copy(camera.position);
+    S.sQuat.copy(camera.quaternion);
+    S.poseOk = true; return;
   }
-  if (S.zoomFactor > 1.0) {
-    S.smoothPos.lerp(camera.position, SMOOTH_POS);
-    S.smoothQuat.slerp(camera.quaternion, SMOOTH_ORI);
+  if(S.zf > 1.05){
+    S.sPos.lerp(camera.position, SMOOTH_P);
+    S.sQuat.slerp(camera.quaternion, SMOOTH_Q);
   } else {
-    S.smoothPos.copy(camera.position);
-    S.smoothQuat.copy(camera.quaternion);
+    S.sPos.copy(camera.position);
+    S.sQuat.copy(camera.quaternion);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  RAYCAST / HOVER / LOCK
-// ═══════════════════════════════════════════════════════════════════
-function doRaycast() {
-  _fwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
-  raycaster.set(camera.position, _fwd);
-  raycaster.far = MAX_HOVER_DIST;
-  const hits = raycaster.intersectObjects(selectables, false);
-  S.hoverHit = hits.length > 0 ? hits[0] : null;
+// ── RAYCAST / HOVER / LOCK ──────────────────────────────────────
+function tickRay(){
+  _fwd.set(0,0,-1).applyQuaternion(camera.quaternion);
+  RC.set(camera.position, _fwd);
+  RC.far = MAX_HOVER_M;
+  const hits = RC.intersectObjects(selectables,false);
+  S.hover = hits.length ? hits[0] : null;
 
-  // Update emissive highlight
-  selectables.forEach(m => {
-    const isHover = S.hoverHit && S.hoverHit.object === m;
-    const isLocked = S.lockTarget === m;
-    const target = isLocked ? new THREE.Color(0.3,0,0) :
-                   isHover  ? new THREE.Color(0,0.12,0.18) :
-                               new THREE.Color(0,0,0);
-    m.material.emissive.lerp(target, 0.15);
+  // Emissive feedback
+  selectables.forEach(m=>{
+    const tgt = S.lock===m
+      ? new THREE.Color(.28,0,0)
+      : (S.hover?.object===m ? new THREE.Color(0,.1,.18) : new THREE.Color(0,0,0));
+    m.material.emissive.lerp(tgt,.14);
   });
 
-  // Lock validity check
-  if (S.lockTarget) {
-    const lt = S.lockTarget;
-    const dist = camera.position.distanceTo(lt.position);
-    if (dist > MAX_LOCK_DIST || !scene.getObjectById(lt.id)) {
-      releaseLock(); return;
-    }
-    // Occlusion check
-    const toTgt = _v3.subVectors(lt.position, camera.position);
-    const len = toTgt.length();
-    const oRay = new THREE.Raycaster(camera.position, toTgt.clone().normalize(), 0.1, len - 0.3);
-    const oHits = oRay.intersectObjects(selectables, false);
-    const occluded = oHits.length > 0 && oHits[0].object !== lt;
-    S.occludeFrames = occluded ? S.occludeFrames + 1 : 0;
-    if (S.occludeFrames > MAX_OCCL_FRAMES) releaseLock();
-  }
+  if(!S.lock) return;
+
+  // Lock validity
+  const dist = camera.position.distanceTo(S.lock.position);
+  if(dist>MAX_LOCK_M || !scene.getObjectById(S.lock.id)){ dropLock(); return; }
+
+  // Occlusion
+  const to = _v.subVectors(S.lock.position, camera.position);
+  const len = to.length();
+  const oRC = new THREE.Raycaster(camera.position, to.clone().normalize(), .1, len-.3);
+  const oh = oRC.intersectObjects(selectables,false);
+  const occ = oh.length>0 && oh[0].object!==S.lock;
+  S.occN = occ ? S.occN+1 : 0;
+  if(S.occN>OCCL_FRAMES) dropLock();
 }
 
-function releaseLock() {
-  S.lockTarget = null;
-  S.occludeFrames = 0;
-  S.bboxInit = false;
-  S.lockLostTimer = performance.now() + 2200;
-  flash('lockLost');
+function dropLock(){
+  S.lock=null; S.occN=0; S.bboxOk=false;
+  S.lockLostUntil = performance.now()+2400;
+  flash('lockLost',400);
+}
+function doLock(){
+  if(S.lock){ dropLock(); return; }
+  if(S.hover){ S.lock=S.hover.object; S.occN=0; S.bboxOk=false; flash('lock'); }
 }
 
-function tryLock() {
-  if (S.lockTarget) { releaseLock(); return; }
-  if (S.hoverHit) {
-    S.lockTarget = S.hoverHit.object;
-    S.occludeFrames = 0;
-    S.bboxInit = false;
-    flash('lock');
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  BBOX PROJECTION
-// ═══════════════════════════════════════════════════════════════════
-function projectBbox(mesh) {
-  _box3.setFromObject(mesh);
-  const corners = [
-    [_box3.min.x,_box3.min.y,_box3.min.z],[_box3.max.x,_box3.min.y,_box3.min.z],
-    [_box3.min.x,_box3.max.y,_box3.min.z],[_box3.max.x,_box3.max.y,_box3.min.z],
-    [_box3.min.x,_box3.min.y,_box3.max.z],[_box3.max.x,_box3.min.y,_box3.max.z],
-    [_box3.min.x,_box3.max.y,_box3.max.z],[_box3.max.x,_box3.max.y,_box3.max.z],
+// ── BBOX PROJECTION (logical HUD pixels) ────────────────────────
+function projectBbox(mesh){
+  _bx.setFromObject(mesh);
+  const min=_bx.min, max=_bx.max;
+  const corners=[
+    [min.x,min.y,min.z],[max.x,min.y,min.z],[min.x,max.y,min.z],[max.x,max.y,min.z],
+    [min.x,min.y,max.z],[max.x,min.y,max.z],[min.x,max.y,max.z],[max.x,max.y,max.z],
   ];
-  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity, anyValid=false;
-  // Project into logical HUD coords (0-HUD_LW, 0-HUD_LH)
-  for (const c of corners) {
-    _v3.set(c[0],c[1],c[2]);
-    _v3.project(camera);
-    if (_v3.z > 1) continue;
-    const sx = (_v3.x  * .5 + .5) * HUD_LW;
-    const sy = (-_v3.y * .5 + .5) * HUD_LH;
-    minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
-    minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
-    anyValid = true;
-  }
-  if (!anyValid) return null;
-  return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9,ok=false;
+  corners.forEach(c=>{
+    _v.set(c[0],c[1],c[2]).project(camera);
+    if(_v.z>1) return;
+    const px=(_v.x*.5+.5)*LW, py=(-_v.y*.5+.5)*LH;
+    x0=Math.min(x0,px); x1=Math.max(x1,px);
+    y0=Math.min(y0,py); y1=Math.max(y1,py);
+    ok=true;
+  });
+  return ok ? {x:x0,y:y0,w:x1-x0,h:y1-y0} : null;
 }
 
-function getSmoothBbox(raw) {
-  if (!S.bboxInit) { S.bboxS = {...raw}; S.bboxInit = true; return {...raw}; }
-  S.bboxS.x += (raw.x - S.bboxS.x) * BBOX_SMOOTH;
-  S.bboxS.y += (raw.y - S.bboxS.y) * BBOX_SMOOTH;
-  S.bboxS.w += (raw.w - S.bboxS.w) * BBOX_SMOOTH;
-  S.bboxS.h += (raw.h - S.bboxS.h) * BBOX_SMOOTH;
-  return {...S.bboxS};
+function smoothBbox(r){
+  if(!S.bboxOk){ S.bboxS={...r}; S.bboxOk=true; return {...r}; }
+  const s=S.bboxS;
+  s.x+=(r.x-s.x)*BBOX_A; s.y+=(r.y-s.y)*BBOX_A;
+  s.w+=(r.w-s.w)*BBOX_A; s.h+=(r.h-s.h)*BBOX_A;
+  return {...s};
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  FLASH SYSTEM
-// ═══════════════════════════════════════════════════════════════════
-function flash(key, dur=350) { S.flashes[key] = performance.now() + dur; }
-function flashAlpha(key) {
-  const exp = S.flashes[key];
-  if (!exp) return 0;
-  const rem = exp - performance.now();
-  if (rem <= 0) { delete S.flashes[key]; return 0; }
-  return rem / 350;
-}
-function flashColor(baseHex, key) {
-  const a = flashAlpha(key);
-  if (a < 0.01) return baseHex;
-  return lerpHex(baseHex, '#ffffff', a * 0.8);
+// ── FLASH SYSTEM ─────────────────────────────────────────────────
+function flash(k,dur=320){ S.flashes[k]=performance.now()+dur; }
+function fAlpha(k){ const e=S.flashes[k]; if(!e) return 0; const r=e-performance.now(); if(r<=0){delete S.flashes[k];return 0;} return r/320; }
+function fCol(base,k){ const a=fAlpha(k); if(a<.01) return base; return lerpHex(base,'#ffffff',a*.75); }
+function lerpHex(a,b,t){
+  const p=s=>parseInt(s.slice(1),16);
+  const [ar,ag,ab]=[p(a)>>16&255,p(a)>>8&255,p(a)&255];
+  const [br,bg,bb]=[p(b)>>16&255,p(b)>>8&255,p(b)&255];
+  const r=Math.round(ar+(br-ar)*t), g=Math.round(ag+(bg-ag)*t), bv=Math.round(ab+(bb-ab)*t);
+  return '#'+[r,g,bv].map(x=>x.toString(16).padStart(2,'0')).join('');
 }
 
-function lerpHex(c1, c2, t) {
-  const p = s => parseInt(s,16);
-  const r1=p(c1.slice(1,3)), g1=p(c1.slice(3,5)), b1=p(c1.slice(5,7));
-  const r2=p(c2.slice(1,3)), g2=p(c2.slice(3,5)), b2=p(c2.slice(5,7));
-  const r=Math.round(r1+(r2-r1)*t), g=Math.round(g1+(g2-g1)*t), b=Math.round(b1+(b2-b1)*t);
-  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+// ══════════════════════════════════════════════════════════════════
+//  DATA: CLOCK / GEO / WEATHER / AQI
+//  Logic ported exactly from original hud__3_.html
+// ══════════════════════════════════════════════════════════════════
+const DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+const MONS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function p2(n){return String(n).padStart(2,'0');}
+
+let clockStr='--:--:--', dateStr='--- -- ----';
+function tickClock(){
+  const n=new Date();
+  clockStr=`${p2(n.getHours())}:${p2(n.getMinutes())}:${p2(n.getSeconds())}`;
+  dateStr=`${DAYS[n.getDay()]} ${n.getDate()} ${MONS[n.getMonth()]} ${n.getFullYear()}`;
 }
+setInterval(tickClock,500); tickClock();
 
-// ═══════════════════════════════════════════════════════════════════
-//  CLOCK
-// ═══════════════════════════════════════════════════════════════════
-const DAYS   = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-function p2(n) { return String(n).padStart(2,'0'); }
-
-function updateClock() {
-  const n = new Date();
-  S.clock.h    = p2(n.getHours());
-  S.clock.m    = p2(n.getMinutes());
-  S.clock.s    = p2(n.getSeconds());
-  S.clock.date = `${DAYS[n.getDay()]} ${n.getDate()} ${MONTHS[n.getMonth()]} ${n.getFullYear()}`;
+// Geolocation — ported from original
+let geoWatchId=null;
+function haversineM(la1,lo1,la2,lo2){
+  const R=6371000,dLa=(la2-la1)*Math.PI/180,dLo=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-setInterval(updateClock, 500);
-updateClock();
+function startGPS(){
+  if(!navigator.geolocation){S.gpsLabel='● GPS UNAVAIL';return;}
+  geoWatchId=navigator.geolocation.watchPosition(pos=>{
+    const la=pos.coords.latitude,lo=pos.coords.longitude;
+    const moved=S.lat==null||Math.abs(la-S.lat)>.0005||Math.abs(lo-S.lon)>.0005;
+    const now=Date.now();
 
-// ═══════════════════════════════════════════════════════════════════
-//  GEOLOCATION
-// ═══════════════════════════════════════════════════════════════════
-let lastGeoLat=null, lastGeoLon=null, lastSpeedPos=null, lastSpeedTime=null;
-const speedSamples=[];
-
-function haversineM(a,b,c,d) {
-  const R=6371000, dLat=(c-a)*Math.PI/180, dLon=(d-b)*Math.PI/180;
-  const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-function startGeo() {
-  if (!navigator.geolocation) { S.gpsLabel='● GPS UNAVAILABLE'; return; }
-  navigator.geolocation.watchPosition(pos => {
-    const lat = pos.coords.latitude, lon = pos.coords.longitude;
-    S.geoLat = lat; S.geoLon = lon;
-    S.gpsLabel = '● GPS LOCKED';
-
-    // Speed + odo
-    const now = Date.now();
-    if (lastSpeedPos) {
-      const dist = haversineM(lastSpeedPos.lat, lastSpeedPos.lon, lat, lon);
-      const dt = (now - lastSpeedTime) / 1000;
-      if (dt > 0.3) {
-        const spd = pos.coords.speed != null ? pos.coords.speed*3.6 : (dist/dt)*3.6;
-        speedSamples.push(spd);
-        if (speedSamples.length > 4) speedSamples.shift();
-        S.speedKmh = speedSamples.reduce((a,b)=>a+b)/speedSamples.length;
-        if (S.speedKmh < 0.5) S.speedKmh = 0;
-        if (dist > 2) S.odoM += dist;
+    if(S._lastLL){
+      const dt=(now-S._lastT)/1000;
+      if(dt>.3){
+        const d=haversineM(S._lastLL.la,S._lastLL.lo,la,lo);
+        const spd=pos.coords.speed!=null?pos.coords.speed*3.6:(d/dt)*3.6;
+        S._spdSamples.push(spd); if(S._spdSamples.length>4)S._spdSamples.shift();
+        S.spdKmh=S._spdSamples.reduce((a,b)=>a+b)/S._spdSamples.length;
+        if(S.spdKmh<.5)S.spdKmh=0;
+        if(d>2)S.odoM+=d;
       }
     }
-    lastSpeedPos = {lat,lon}; lastSpeedTime = now;
-
-    // Breadcrumbs for minimap
-    if (!S.crumbs.length || haversineM(S.crumbs[S.crumbs.length-1].lat, S.crumbs[S.crumbs.length-1].lon, lat, lon) > 4) {
-      S.crumbs.push({lat,lon});
-      if (S.crumbs.length > 300) S.crumbs.shift();
+    S._lastLL={la,lo}; S._lastT=now;
+    if(!S.crumbs.length||haversineM(S.crumbs[S.crumbs.length-1].la,S.crumbs[S.crumbs.length-1].lo,la,lo)>4){
+      S.crumbs.push({la,lo}); if(S.crumbs.length>300)S.crumbs.shift();
     }
 
-    const moved = lastGeoLat==null || Math.abs(lat-lastGeoLat)>.0005 || Math.abs(lon-lastGeoLon)>.0005;
-    lastGeoLat=lat; lastGeoLon=lon;
+    S.lat=la; S.lon=lo;
+    S.gpsLabel='● GPS LOCKED';
 
-    const now2 = performance.now();
-    if (now2 - S.weatherFetched > WEATHER_MS || moved && S.weatherFetched===0) fetchWeather();
-    if (now2 - S.aqiFetched    > AQI_MS    || moved && S.aqiFetched===0)    fetchAQI();
-    if (moved) reverseGeocode();
-  },
-  () => { S.gpsLabel='● GPS ERROR'; },
-  { enableHighAccuracy:true, maximumAge:0, timeout:20000 }
-  );
+    const now2=performance.now();
+    if(moved||S.wFetched===0) fetchWeather();
+    else if(now2-S.wFetched>WEATHER_TTL) fetchWeather();
+    if(moved||S.aqiFetched===0) fetchAQI();
+    else if(now2-S.aqiFetched>AQI_TTL) fetchAQI();
+    if(moved) doReverseGeocode();
+  },()=>{S.gpsLabel='● GPS ERROR';},{enableHighAccuracy:true,maximumAge:0,timeout:20000});
 }
-startGeo();
+startGPS();
 
-// ═══════════════════════════════════════════════════════════════════
-//  REVERSE GEOCODE
-// ═══════════════════════════════════════════════════════════════════
-let geocodeTimer;
-function reverseGeocode() {
-  clearTimeout(geocodeTimer);
-  geocodeTimer = setTimeout(async () => {
-    if (!S.geoLat) return;
-    try {
-      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${S.geoLat.toFixed(4)}&lon=${S.geoLon.toFixed(4)}&format=json&zoom=16`, {headers:{'Accept-Language':'en'}});
-      const d = await r.json();
-      const addr = d.address || {};
-      S.street = (addr.road||addr.pedestrian||addr.path||'').toUpperCase();
-      const city = addr.city||addr.town||addr.village||'';
-      const area = addr.neighbourhood||addr.suburb||addr.city_district||city||addr.state||'';
-      S.area = (area&&city&&area!==city ? area+', '+city : area||city||'').toUpperCase();
+let _gcTimer;
+function doReverseGeocode(){
+  clearTimeout(_gcTimer);
+  _gcTimer=setTimeout(async()=>{
+    if(!S.lat)return;
+    try{
+      const d=await(await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${S.lat.toFixed(4)}&lon=${S.lon.toFixed(4)}&format=json&zoom=16`,{headers:{'Accept-Language':'en'}})).json();
+      const a=d.address||{};
+      S.street=(a.road||a.pedestrian||a.path||a.footway||'').toUpperCase();
+      const city=a.city||a.town||a.village||'';
+      const area=a.neighbourhood||a.suburb||a.city_district||city||a.state||'';
+      S.area=(area&&city&&area!==city?area+', '+city:area||city||'').toUpperCase();
       flash('geo');
-    } catch(_) {}
-  }, 3000);
+    }catch(_){}
+  },3000);
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  WEATHER
-// ═══════════════════════════════════════════════════════════════════
-const WMO_CODES = {
-  0:'CLEAR',1:'MOSTLY CLR',2:'PARTLY CLD',3:'OVERCAST',
-  45:'FOG',48:'ICING FOG',
-  51:'LT DRIZZLE',53:'DRIZZLE',55:'HVY DRIZZLE',
-  61:'LT RAIN',63:'RAIN',65:'HVY RAIN',
-  71:'LT SNOW',73:'SNOW',75:'HVY SNOW',
-  80:'SHOWERS',81:'SHOWERS',82:'HVY SHOWERS',
-  95:'STORM',96:'STORM/HAIL',99:'STORM/HAIL',
-};
+// wCode — identical to original
+function wCode(c){
+  if(c===0)return'CLEAR';if(c<=2)return'PARTLY CLD';if(c<=3)return'OVERCAST';
+  if(c<=49)return'FOG';if(c<=59)return'DRIZZLE';if(c<=69)return'RAIN';
+  if(c<=79)return'SNOW';if(c<=82)return'SHOWERS';if(c<=99)return'STORM';return'--';
+}
+function aqiInfo(v){
+  if(v<=20)return{l:'GOOD',c:CG};if(v<=40)return{l:'FAIR',c:CG};
+  if(v<=60)return{l:'MODERATE',c:CW};if(v<=80)return{l:'POOR',c:CW};
+  if(v<=100)return{l:'VERY POOR',c:CR};return{l:'HAZARDOUS',c:CR};
+}
+function pollenInfo(v){
+  if(v<=10)return{l:'LOW',c:CG};if(v<=30)return{l:'MODERATE',c:CW};
+  if(v<=50)return{l:'HIGH',c:CW};return{l:'VERY HIGH',c:CR};
+}
 
-async function fetchWeather() {
-  if (!S.geoLat) return;
-  S.weatherFetched = performance.now();
-  try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${S.geoLat.toFixed(4)}&longitude=${S.geoLon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1`;
-    const d = await (await fetch(url)).json();
-    const c = d.current;
-    S.weather.temp = `${Math.round(c.temperature_2m)}°C`;
-    S.weather.cond = WMO_CODES[c.weather_code] || `CODE${c.weather_code}`;
-    S.weather.wind = `${Math.round(c.wind_speed_10m)} KM/H`;
-    S.weather.hum  = `${c.relative_humidity_2m}%`;
-    if (d.daily) {
-      const sr = d.daily.sunrise[0].split('T')[1].slice(0,5);
-      const ss = d.daily.sunset[0].split('T')[1].slice(0,5);
-      S.weather.sun = `↑${sr} ↓${ss}`;
-    }
+async function fetchWeather(){
+  if(!S.lat)return;
+  S.wFetched=performance.now();
+  try{
+    const d=await(await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${S.lat.toFixed(4)}&longitude=${S.lon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1`
+    )).json();
+    const c=d.current, dd=d.daily;
+    S.wTemp=Math.round(c.temperature_2m)+'°C';
+    S.wCond=wCode(c.weather_code);
+    S.wWind=Math.round(c.wind_speed_10m)+' km/h';
+    S.wHum=Math.round(c.relative_humidity_2m)+'%';
+    if(dd) S.wSun='↑'+dd.sunrise[0].split('T')[1].slice(0,5)+' ↓'+dd.sunset[0].split('T')[1].slice(0,5);
     flash('weather');
-  } catch(_) {}
+  }catch(_){}
 }
 
-async function fetchAQI() {
-  if (!S.geoLat) return;
-  S.aqiFetched = performance.now();
-  try {
-    const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${S.geoLat.toFixed(4)}&longitude=${S.geoLon.toFixed(4)}&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen`;
-    const d = await (await fetch(url)).json();
-    const c = d.current;
-    const aqiVal = c.european_aqi ?? c.us_aqi ?? null;
-    if (aqiVal != null) {
-      const {label,color} = aqiBucket(aqiVal);
-      S.aqi = { val:String(Math.round(aqiVal)), label, color };
+async function fetchAQI(){
+  if(!S.lat)return;
+  S.aqiFetched=performance.now();
+  try{
+    const d=await(await fetch(
+      `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${S.lat.toFixed(4)}&longitude=${S.lon.toFixed(4)}&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen`
+    )).json();
+    const c=d.current;
+    const aqiV=c.european_aqi!=null?c.european_aqi:c.us_aqi;
+    if(aqiV!=null){
+      const ai=aqiInfo(aqiV);
+      S.aqiVal=Math.round(aqiV)+''; S.aqiLabel=ai.l; S.aqiColor=ai.c;
     }
-    const pollens = [
-      {n:'GRASS',  v:c.grass_pollen},
-      {n:'BIRCH',  v:c.birch_pollen},
-      {n:'MUGWORT',v:c.mugwort_pollen},
-    ].filter(x => x.v != null);
-    if (pollens.length) {
-      const top = pollens.reduce((a,b)=>b.v>a.v?b:a);
-      const {label,color} = pollenBucket(top.v);
-      S.pollen = { val:String(Math.round(top.v)), label:`${label} ${top.n}`, color };
+    const pvs=[{n:'GRASS',v:c.grass_pollen},{n:'BIRCH',v:c.birch_pollen},{n:'MUGWORT',v:c.mugwort_pollen}].filter(x=>x.v!=null);
+    if(pvs.length){
+      const top=pvs.reduce((a,b)=>b.v>a.v?b:a);
+      const pi=pollenInfo(top.v);
+      S.pollenVal=Math.round(top.v)+''; S.pollenLabel=pi.l+' '+top.n; S.pollenColor=pi.c;
     }
     flash('aqi');
-  } catch(_) {}
+  }catch(_){}
 }
 
-function aqiBucket(v) {
-  if (v<=25) return {label:'GOOD',      color:T.good};
-  if (v<=50) return {label:'FAIR',      color:T.good};
-  if (v<=75) return {label:'MODERATE',  color:T.warn};
-  if (v<=100)return {label:'POOR',      color:T.warn};
-  if (v<=150)return {label:'VERY POOR', color:T.danger};
-  return             {label:'HAZARDOUS',color:T.danger};
-}
-function pollenBucket(v) {
-  if (v<=10)return {label:'LOW',       color:T.good};
-  if (v<=30)return {label:'MODERATE',  color:T.warn};
-  if (v<=50)return {label:'HIGH',      color:T.warn};
-  return           {label:'VERY HIGH', color:T.danger};
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  HEADING (compass)
-// ═══════════════════════════════════════════════════════════════════
-(function startHeading() {
-  function applyOrient(e) {
-    let hdg = null;
-    if (e.webkitCompassHeading != null) hdg = e.webkitCompassHeading;
-    else if (e.absolute && e.alpha != null) hdg = (360 - e.alpha + 360) % 360;
-    if (hdg != null) S.headingTarget = hdg;
+// Heading — ported from original
+(function(){
+  function apply(e){
+    let h=null;
+    if(e.webkitCompassHeading!=null) h=e.webkitCompassHeading;
+    else if(e.absolute&&e.alpha!=null) h=(360-e.alpha+360)%360;
+    if(h==null) return;
+    if(S.heading==null) S.heading=h;
+    else{ let d=h-S.heading; if(d>180)d-=360; if(d<-180)d+=360; S.heading=(S.heading+d*.1+360)%360; }
   }
-  if ('ondeviceorientationabsolute' in window)
-    window.addEventListener('deviceorientationabsolute', applyOrient, true);
-  window.addEventListener('deviceorientation', applyOrient, true);
+  if('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute',apply,true);
+  window.addEventListener('deviceorientation',apply,true);
 })();
 
-function updateHeading() {
-  if (S.headingTarget == null) return;
-  if (S.headingSmooth == null) { S.headingSmooth = S.headingTarget; return; }
-  let diff = S.headingTarget - S.headingSmooth;
-  if (diff > 180) diff -= 360;
-  if (diff < -180) diff += 360;
-  S.headingSmooth = (S.headingSmooth + diff * 0.1 + 360) % 360;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  MINIMAP TILE CACHE
-// ═══════════════════════════════════════════════════════════════════
-const tileCache = {};
-const MAP_ZOOM = 17;
-
-function lon2tf(lo,z){return(lo+180)/360*Math.pow(2,z);}
-function lat2tf(la,z){return(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*Math.pow(2,z);}
-
-function getTile(tx,ty,z) {
-  const key=`${z}/${tx}/${ty}`;
-  if (tileCache[key]) return tileCache[key];
-  const e={img:new Image(),loaded:false};
+// ══════════════════════════════════════════════════════════════════
+//  MINIMAP TILES
+// ══════════════════════════════════════════════════════════════════
+const tileCache={};
+const MZ=17;
+function lon2tf(lo,z){return(lo+180)/360*(1<<z);}
+function lat2tf(la,z){return(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*(1<<z);}
+function getTile(tx,ty,z){
+  const k=`${z}/${tx}/${ty}`;
+  if(tileCache[k])return tileCache[k];
+  const e={img:new Image(),ok:false};
   e.img.crossOrigin='anonymous';
-  e.img.onload=()=>{e.loaded=true;};
+  e.img.onload=()=>e.ok=true;
   e.img.src=`https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
-  tileCache[key]=e; return e;
+  return tileCache[k]=e;
 }
 
-function llToPx(pLat,pLon,pxPerM) {
-  return {
-    x: (pLon-S.geoLon)*111320*Math.cos(S.geoLat*Math.PI/180)*pxPerM,
-    y:-(pLat-S.geoLat)*111320*pxPerM,
-  };
+// ══════════════════════════════════════════════════════════════════
+//  HUD DRAW HELPERS  (all coords in LOGICAL LW×LH pixels)
+// ══════════════════════════════════════════════════════════════════
+function cls(){ H.clearRect(0,0,LW,LH); }
+
+function ft(sz,w='700'){ H.font=`${w} ${sz}px 'Courier New',monospace`; }
+
+function tx(str,x,y,col=C,al=1,align='left'){
+  H.save(); H.globalAlpha=al; H.fillStyle=col;
+  H.textAlign=align; H.textBaseline='alphabetic';
+  H.fillText(str,x,y); H.restore();
+}
+function ln(x1,y1,x2,y2,col=C,al=.5,lw=1){
+  H.save(); H.globalAlpha=al; H.strokeStyle=col; H.lineWidth=lw;
+  H.beginPath(); H.moveTo(x1,y1); H.lineTo(x2,y2); H.stroke(); H.restore();
+}
+function bgrect(x,y,w,h,col=C){
+  H.save();
+  H.fillStyle='rgba(0,8,14,.72)';
+  H.fillRect(x,y,w,h);
+  H.strokeStyle=col; H.globalAlpha=.2; H.lineWidth=.8;
+  H.strokeRect(x,y,w,h);
+  H.restore();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  HUD DRAWING UTILITIES
-// ═══════════════════════════════════════════════════════════════════
-// All coordinates in LOGICAL pixels (HUD_LW × HUD_LH)
-
-const LW = HUD_LW;
-const LH = HUD_LH;
-const cx = LW/2;
-const cy = LH/2;
-
-function cls() { hud.clearRect(0, 0, LW, LH); }
-
-function setFont(size, weight='700', fam="'Courier New',monospace") {
-  hud.font = `${weight} ${size}px ${fam}`;
-}
-function txt(str, x, y, col=T.main, alpha=1, align='left') {
-  hud.save();
-  hud.globalAlpha = alpha;
-  hud.fillStyle = col;
-  hud.textAlign = align;
-  hud.textBaseline = 'alphabetic';
-  hud.fillText(str, x, y);
-  hud.restore();
-}
-function line(x1,y1,x2,y2,col=T.main,alpha=1,lw=1.5) {
-  hud.save(); hud.globalAlpha=alpha; hud.strokeStyle=col; hud.lineWidth=lw;
-  hud.beginPath(); hud.moveTo(x1,y1); hud.lineTo(x2,y2); hud.stroke(); hud.restore();
-}
-function rect(x,y,w,h,col,alpha=1) {
-  hud.save(); hud.globalAlpha=alpha; hud.fillStyle=col;
-  hud.fillRect(x,y,w,h); hud.restore();
-}
-function strokeRect(x,y,w,h,col,alpha=1,lw=1.5) {
-  hud.save(); hud.globalAlpha=alpha; hud.strokeStyle=col; hud.lineWidth=lw;
-  hud.strokeRect(x,y,w,h); hud.restore();
-}
-function panel(x,y,w,h,col=T.main) {
-  rect(x,y,w,h,'rgba(2,10,18,0.72)');
-  strokeRect(x,y,w,h,col,0.18,1);
+// ── SCANLINES ───────────────────────────────────────────────────
+function drawScanlines(){
+  // Sparse horizontal lines — low alpha so they don't interfere with passthrough readability
+  H.save();
+  H.strokeStyle=C; H.lineWidth=.8;
+  for(let y=0;y<LH;y+=5){ H.globalAlpha=.015; H.beginPath(); H.moveTo(0,y); H.lineTo(LW,y); H.stroke(); }
+  // Sweep
+  S.sweepY=(S.sweepY+.7)%(LH+30);
+  const sg=H.createLinearGradient(0,S.sweepY-16,0,S.sweepY+16);
+  sg.addColorStop(0,'transparent'); sg.addColorStop(.5,C); sg.addColorStop(1,'transparent');
+  H.globalAlpha=.045; H.strokeStyle=sg; H.lineWidth=2;
+  H.beginPath(); H.moveTo(0,S.sweepY); H.lineTo(LW,S.sweepY); H.stroke();
+  H.restore();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  HUD SECTIONS
-// ═══════════════════════════════════════════════════════════════════
-
-// ── 1. SCANLINE + VIGNETTE ──────────────────────────────────────
-let sweepY = 0;
-function drawScanlines() {
-  // Subtle horizontal scanlines
-  for (let y=0; y<LH; y+=4) {
-    hud.save(); hud.globalAlpha=0.022; hud.strokeStyle=T.main; hud.lineWidth=1;
-    hud.beginPath(); hud.moveTo(0,y); hud.lineTo(LW,y); hud.stroke(); hud.restore();
-  }
-  // Moving sweep
-  sweepY += 0.8; if (sweepY > LH+40) sweepY=-40;
-  const sg = hud.createLinearGradient(0,sweepY-20,0,sweepY+20);
-  sg.addColorStop(0,'transparent'); sg.addColorStop(.5,T.main); sg.addColorStop(1,'transparent');
-  hud.save(); hud.globalAlpha=0.055; hud.strokeStyle=sg; hud.lineWidth=2;
-  hud.beginPath(); hud.moveTo(0,sweepY); hud.lineTo(LW,sweepY); hud.stroke(); hud.restore();
-}
-
-// ── 2. FRAME CORNERS ────────────────────────────────────────────
-function drawCorners() {
-  const m=28, c=22, col=T.main, a=0.35, lw=1.5;
+// ── FRAME CORNERS ───────────────────────────────────────────────
+function drawFrame(){
+  const m=18,cs=16;
+  H.save(); H.strokeStyle=C; H.lineWidth=1.2;
   [[m,m,1,1],[LW-m,m,-1,1],[m,LH-m,1,-1],[LW-m,LH-m,-1,-1]].forEach(([x,y,sx,sy])=>{
-    hud.save(); hud.strokeStyle=col; hud.globalAlpha=a; hud.lineWidth=lw;
-    hud.beginPath(); hud.moveTo(x,y+sy*c); hud.lineTo(x,y); hud.lineTo(x+sx*c,y); hud.stroke(); hud.restore();
+    H.globalAlpha=.35;
+    H.beginPath(); H.moveTo(x,y+sy*cs); H.lineTo(x,y); H.lineTo(x+sx*cs,y); H.stroke();
   });
+  H.restore();
 }
 
-// ── 3. COMPASS BAR (top centre) ────────────────────────────────
-function drawCompass() {
-  const bw=440, bh=32, bx=cx-bw/2, by=14;
-  panel(bx,by,bw,bh);
-
-  const hdg = S.headingSmooth ?? 0;
-  const pxPerDeg = bw/80;
-  const CARD = {0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
-
-  // Clip to bar
-  hud.save();
-  hud.beginPath(); hud.rect(bx+1,by+1,bw-2,bh-2); hud.clip();
-
-  for (let d=-120; d<=120+360; d+=5) {
-    const offset = (d-hdg)*pxPerDeg;
-    if (offset < -bw/2-20 || offset > bw/2+20) continue;
-    const px = cx + offset;
-    const dNorm = ((d%360)+360)%360;
-    const isCard = CARD[dNorm] !== undefined;
-    const isMajor = d%10===0;
-    const tickH = isCard ? bh*.52 : isMajor ? bh*.32 : bh*.14;
-    hud.save();
-    hud.strokeStyle = dNorm===0 ? T.accent : T.main;
-    hud.lineWidth = isCard ? 1.5 : 0.7;
-    hud.globalAlpha = isCard ? 0.9 : isMajor ? 0.35 : 0.12;
-    hud.beginPath(); hud.moveTo(px,by+bh); hud.lineTo(px,by+bh-tickH); hud.stroke();
-    if (isCard) {
-      setFont(10,'900'); hud.fillStyle = dNorm===0?T.accent:T.main;
-      hud.globalAlpha = dNorm===0?1:0.7; hud.textAlign='center'; hud.textBaseline='top';
-      hud.fillText(CARD[dNorm], px, by+2);
+// ── COMPASS BAR (top centre) ─────────────────────────────────────
+function drawCompass(){
+  const bw=320,bh=26,bx=LW/2-bw/2,by=12;
+  bgrect(bx,by,bw,bh);
+  const hdg=S.heading??0, ppd=bw/70;
+  H.save();
+  H.beginPath(); H.rect(bx+1,by+1,bw-2,bh-2); H.clip();
+  const CARD={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+  for(let d=-90;d<=90+360;d+=5){
+    let off=(d-hdg)*ppd; if(off<-bw)off+=360*ppd; if(off>bw)off-=360*ppd;
+    const px=LW/2+off; if(px<bx-8||px>bx+bw+8) continue;
+    const dn=((d%360)+360)%360;
+    const isC=CARD[dn]!=null, isM=d%10===0;
+    const tH=isC?bh*.55:isM?bh*.3:bh*.12;
+    H.globalAlpha=isC?.85:isM?.3:.1;
+    H.strokeStyle=dn===0?CG:C; H.lineWidth=isC?1.4:.7;
+    H.beginPath(); H.moveTo(px,by+bh); H.lineTo(px,by+bh-tH); H.stroke();
+    if(isC){
+      ft(9,dn%90===0?'900':'700');
+      H.fillStyle=dn===0?CG:C; H.globalAlpha=dn===0?1:.65;
+      H.textAlign='center'; H.textBaseline='top'; H.fillText(CARD[dn],px,by+2);
     }
-    hud.restore();
   }
-  hud.restore();
-
-  // Centre tick
-  hud.save(); hud.strokeStyle=T.accent; hud.lineWidth=2; hud.globalAlpha=0.9;
-  hud.beginPath(); hud.moveTo(cx,by+bh+1); hud.lineTo(cx-4,by+bh+7); hud.lineTo(cx+4,by+bh+7); hud.closePath(); hud.fill(); hud.restore();
-
-  // Heading readout
-  const hdgStr = S.headingSmooth!=null ? `${Math.round(S.headingSmooth).toString().padStart(3,'0')}°` : '---°';
-  setFont(12,'900'); hud.textAlign='center';
-  const tw = hud.measureText(hdgStr).width + 12;
-  rect(cx-tw/2, by+bh+6, tw, 15, 'rgba(0,5,10,0.85)');
-  strokeRect(cx-tw/2, by+bh+6, tw, 15, T.main, 0.25, 1);
-  setFont(11,'900'); txt(hdgStr, cx, by+bh+17, T.accent, 0.95, 'center');
+  H.restore();
+  // Centre tick + heading label
+  H.save(); H.fillStyle=CG; H.globalAlpha=.9;
+  H.beginPath(); H.moveTo(LW/2,by+bh+1); H.lineTo(LW/2-3,by+bh+6); H.lineTo(LW/2+3,by+bh+6); H.closePath(); H.fill();
+  const hs=S.heading!=null?Math.round(S.heading).toString().padStart(3,'0')+'°':'---°';
+  ft(9,'900'); H.textAlign='center';
+  const tw=H.measureText(hs).width+8;
+  H.fillStyle='rgba(0,8,14,.85)'; H.fillRect(LW/2-tw/2,by+bh+5,tw,13);
+  H.strokeStyle=C; H.globalAlpha=.2; H.lineWidth=.8; H.strokeRect(LW/2-tw/2,by+bh+5,tw,13);
+  H.globalAlpha=.95; H.fillStyle=CG; H.textBaseline='top'; H.fillText(hs,LW/2,by+bh+6);
+  H.restore();
 }
 
-// ── 4. TOP-LEFT: CLOCK + DATE + LOCATION ────────────────────────
-function drawClock() {
-  const ox=24, oy=20;
-  const pw=260, ph=88;
-  panel(ox,oy,pw,ph);
+// ── TOP-LEFT: CLOCK + DATE + LOCATION ───────────────────────────
+// Matches original layout: time big, date small, area, street
+function drawClock(){
+  const ox=16,oy=16,pw=238,ph=80;
+  bgrect(ox,oy,pw,ph);
 
-  const timeStr = `${S.clock.h}:${S.clock.m}:${S.clock.s}`;
-  setFont(36,'900');
-  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=10;
-  txt(timeStr, ox+12, oy+40, flashColor(T.main,'weather'));
-  hud.restore();
+  // Time — big, same as original "1.6rem Orbitron"
+  H.save();
+  H.shadowColor=fCol(C,'weather'); H.shadowBlur=8;
+  ft(30,'900'); tx(clockStr,ox+10,oy+34,fCol(C,'weather'));
+  H.restore();
 
-  setFont(11,'700'); txt(S.clock.date, ox+12, oy+58, T.main, 0.6);
+  ft(10,'700'); tx(dateStr,ox+10,oy+50,C,.62);
 
-  if (S.area) {
-    setFont(11,'900'); txt(S.area.slice(0,26), ox+12, oy+74, flashColor(T.main,'geo'), 0.85);
+  if(S.area){
+    H.save(); H.shadowColor=fCol(C,'geo'); H.shadowBlur=6;
+    ft(11,'900'); tx(S.area.slice(0,22),ox+10,oy+66,fCol(C,'geo'),.9);
+    H.restore();
   } else {
-    setFont(10,'700'); txt(S.gpsLabel, ox+12, oy+74, T.dim, 0.7);
+    ft(10,'700'); tx(S.gpsLabel,ox+10,oy+66,
+      S.gpsLabel.includes('LOCKED')?CG:S.gpsLabel.includes('ERROR')?CR:CW,.75);
+  }
+  if(S.street){
+    ft(9,'700'); tx(S.street.slice(0,28),ox+10,oy+78,C,.45);
   }
 
-  // GPS coords small
-  if (S.geoLat!=null) {
-    setFont(9,'700');
-    txt(`${S.geoLat.toFixed(4)}°N ${S.geoLon.toFixed(4)}°E`, ox+12, oy+86, T.dim, 0.45);
+  // Lat/lon tiny
+  if(S.lat!=null){
+    ft(8,'700');
+    tx(`${S.lat.toFixed(4)}°N  ${S.lon.toFixed(4)}°E`,ox+10,oy+90,C,.3);
   }
 }
 
-// ── 5. TOP-RIGHT: ZOOM INDICATOR ─────────────────────────────────
-function drawZoom() {
-  const pw=170, ph=72, ox=LW-pw-24, oy=20;
-  panel(ox,oy,pw,ph);
+// ── TOP-RIGHT: ZOOM INDICATOR ────────────────────────────────────
+// Only a readout — zoom changes camera FOV, not this panel's size
+function drawZoom(){
+  const pw=148,ph=62,ox=LW-pw-16,oy=16;
+  bgrect(ox,oy,pw,ph);
 
-  setFont(9,'900'); txt('ZOOM', ox+10, oy+20, T.dim, 0.7);
-  const zStr = `${S.zoomFactor.toFixed(1)}×`;
-  setFont(30,'900');
-  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=8;
-  txt(zStr, ox+pw-10, oy+42, flashColor(T.main,'zoom'), 0.95, 'right');
-  hud.restore();
+  ft(8,'700'); tx('ZOOM',ox+8,oy+16,C,.55);
+  H.save(); H.shadowColor=fCol(C,'zoom'); H.shadowBlur=6;
+  ft(26,'900'); tx(`${S.zf.toFixed(1)}×`,ox+pw-8,oy+36,fCol(C,'zoom'),.95,'right');
+  H.restore();
 
-  // Bar
-  const bx=ox+10, bby=oy+54, bw=pw-20, bh=5;
-  rect(bx,bby,bw,bh,'rgba(255,255,255,0.04)');
-  strokeRect(bx,bby,bw,bh,T.main,0.2,1);
-  const ratio = Math.log2(Math.max(S.zoomFactor,1)) / Math.log2(10);
-  const filled = Math.min(1,ratio) * bw;
-  rect(bx,bby,filled,bh,T.main,0.8);
-  // Tick marks
+  // Log-scale bar
+  const bx=ox+8,by=oy+46,bw=pw-16,bh=5;
+  H.save();
+  H.fillStyle='rgba(255,255,255,.04)'; H.fillRect(bx,by,bw,bh);
+  H.strokeStyle=C; H.globalAlpha=.18; H.lineWidth=.8; H.strokeRect(bx,by,bw,bh);
+  const ratio=Math.log2(Math.max(S.zf,1))/Math.log2(10);
+  H.fillStyle=C; H.globalAlpha=.8; H.fillRect(bx,by,Math.min(ratio,1)*bw,bh);
+  // Ticks for each zoom level
   ZOOM_LEVELS.forEach(z=>{
-    const tx = bx + Math.log2(Math.max(z,1))/Math.log2(10)*bw;
-    line(tx,bby-3,tx,bby+bh+3,T.main,0.3,1);
+    const tx2=bx+Math.log2(Math.max(z,1))/Math.log2(10)*bw;
+    H.strokeStyle=C; H.globalAlpha=.3; H.lineWidth=.7;
+    H.beginPath(); H.moveTo(tx2,by-2); H.lineTo(tx2,by+bh+2); H.stroke();
   });
-
-  // Level labels
-  setFont(8,'700');
-  ZOOM_LEVELS.forEach(z=>{
-    const tx = bx + Math.log2(Math.max(z,1))/Math.log2(10)*bw;
-    txt(`${z}×`, tx, oy+50, T.dim, 0.35, 'center');
-  });
+  H.restore();
 }
 
-// ── 6. RETICLE (centre) ──────────────────────────────────────────
-let reticleR = 14;
-let lockAng = 0;
+// ── RETICLE (centre) ─────────────────────────────────────────────
+function drawReticle(){
+  const cx=LW/2, cy=LH/2;
+  const hover=S.hover!=null, locked=S.lock!=null;
+  const col=locked?CR:hover?CW:C;
+  S.retR+=(( hover?18:13)-S.retR)*.1;
+  S.lockAng=(S.lockAng+.022)%(Math.PI*2);
 
-function drawReticle() {
-  const hover  = S.hoverHit  != null;
-  const locked = S.lockTarget != null;
-  const col    = locked ? T.lock : hover ? T.warn : T.main;
-
-  reticleR += ((hover ? 18 : 13) - reticleR) * 0.12;
-  lockAng = (lockAng + 0.025) % (Math.PI*2);
-
-  hud.save();
-
-  // Centre dot
-  hud.fillStyle = col; hud.globalAlpha = 0.9;
-  hud.beginPath(); hud.arc(cx,cy,2.5,0,Math.PI*2); hud.fill();
-
-  // Inner ring
-  hud.strokeStyle = col; hud.lineWidth = 1.5; hud.globalAlpha = 0.7;
-  hud.beginPath(); hud.arc(cx,cy,reticleR,0,Math.PI*2); hud.stroke();
-
-  // Cross gaps
-  const g=24, gap=reticleR+4;
-  hud.strokeStyle=col; hud.lineWidth=1; hud.globalAlpha=0.5;
-  hud.beginPath();
-  hud.moveTo(cx-g,cy); hud.lineTo(cx-gap,cy);
-  hud.moveTo(cx+gap,cy); hud.lineTo(cx+g,cy);
-  hud.moveTo(cx,cy-g); hud.lineTo(cx,cy-gap);
-  hud.moveTo(cx,cy+gap); hud.lineTo(cx,cy+g);
-  hud.stroke();
-
-  // Lock spinning arcs
-  if (locked) {
-    hud.globalAlpha = 0.9; hud.strokeStyle = T.lock; hud.lineWidth = 2;
-    for (let i=0;i<4;i++) {
-      const a = lockAng + i*(Math.PI/2);
-      hud.beginPath(); hud.arc(cx,cy,reticleR+10,a,a+Math.PI/3); hud.stroke();
+  H.save();
+  // Dot
+  H.fillStyle=col; H.globalAlpha=.92;
+  H.beginPath(); H.arc(cx,cy,2,0,Math.PI*2); H.fill();
+  // Ring
+  H.strokeStyle=col; H.lineWidth=1.4; H.globalAlpha=.7;
+  H.beginPath(); H.arc(cx,cy,S.retR,0,Math.PI*2); H.stroke();
+  // Cross
+  const g=22,gap=S.retR+4;
+  H.strokeStyle=col; H.lineWidth=.9; H.globalAlpha=.45;
+  H.beginPath();
+  H.moveTo(cx-g,cy); H.lineTo(cx-gap,cy); H.moveTo(cx+gap,cy); H.lineTo(cx+g,cy);
+  H.moveTo(cx,cy-g); H.lineTo(cx,cy-gap); H.moveTo(cx,cy+gap); H.lineTo(cx,cy+g);
+  H.stroke();
+  // Lock arcs
+  if(locked){
+    H.strokeStyle=CR; H.lineWidth=1.8; H.globalAlpha=.85;
+    for(let i=0;i<4;i++){
+      const a=S.lockAng+i*(Math.PI/2);
+      H.beginPath(); H.arc(cx,cy,S.retR+9,a,a+Math.PI*.3); H.stroke();
     }
-    // Pulse ring
-    const pa = (Math.sin(performance.now()*0.005)*0.5+0.5);
-    hud.globalAlpha = pa*0.25; hud.lineWidth=1;
-    hud.beginPath(); hud.arc(cx,cy,reticleR+18,0,Math.PI*2); hud.stroke();
+    // Pulse
+    const p=(Math.sin(performance.now()*.005)*.5+.5);
+    H.strokeStyle=CR; H.lineWidth=.8; H.globalAlpha=p*.2;
+    H.beginPath(); H.arc(cx,cy,S.retR+17,0,Math.PI*2); H.stroke();
   }
-
-  hud.restore();
+  H.restore();
 }
 
-// ── 7. TARGET BRACKETS + OVERLAY ─────────────────────────────────
-function drawTargetOverlay() {
-  const target = S.lockTarget || S.hoverHit?.object;
-  if (!target) return;
-
-  const raw = projectBbox(target);
-  if (!raw) return;
-
-  const bbox  = S.lockTarget ? getSmoothBbox(raw) : raw;
-  const isLocked = !!S.lockTarget;
-  const col   = isLocked ? T.lock : T.warn;
-  const thick = isLocked ? 2.5 : 1.8;
-  const pad   = 10;
-  const name  = target.userData.hudName;
-  const dist  = camera.position.distanceTo(target.position);
-
+// ── TARGET BRACKETS ──────────────────────────────────────────────
+function drawTarget(){
+  const tgt=S.lock||S.hover?.object;
+  if(!tgt) return;
+  const raw=projectBbox(tgt);
+  if(!raw) return;
+  const bbox=S.lock?smoothBbox(raw):raw;
+  const locked=!!S.lock;
+  const col=locked?CR:CW;
+  const dist=camera.position.distanceTo(tgt.position);
+  const pad=10, cs=16;
   const bx=bbox.x-pad, by=bbox.y-pad, bw=bbox.w+pad*2, bh=bbox.h+pad*2;
-  const margin=56;
-  const centX=bx+bw/2, centY=by+bh/2;
-  const offScreen = centX<margin||centX>LW-margin||centY<margin||centY>LH-margin;
+  const bcx=bx+bw/2, bcy=by+bh/2;
+  const margin=50;
+  const off=bcx<margin||bcx>LW-margin||bcy<margin||bcy>LH-margin;
 
-  if (offScreen) {
-    // Edge arrow
-    const ang = Math.atan2(centY-cy, centX-cx);
-    const ex = cx + Math.cos(ang)*(Math.min(cx,cy)-72);
-    const ey = cy + Math.sin(ang)*(Math.min(cx,cy)-72);
-    hud.save(); hud.translate(ex,ey); hud.rotate(ang);
-    hud.strokeStyle=T.warn; hud.lineWidth=2; hud.globalAlpha=0.8;
-    hud.beginPath(); hud.moveTo(-12,0); hud.lineTo(12,0); hud.moveTo(7,-6); hud.lineTo(12,0); hud.lineTo(7,6); hud.stroke();
-    hud.restore();
-    setFont(10,'900'); txt(name, ex+14, ey-4, T.warn, 0.7);
+  if(off){
+    // Off-screen edge arrow
+    const ang=Math.atan2(bcy-LH/2,bcx-LW/2);
+    const ex=LW/2+Math.cos(ang)*(Math.min(LW,LH)/2-54);
+    const ey=LH/2+Math.sin(ang)*(Math.min(LW,LH)/2-54);
+    H.save(); H.translate(ex,ey); H.rotate(ang);
+    H.strokeStyle=CW; H.lineWidth=1.6; H.globalAlpha=.8; H.lineCap='round';
+    H.beginPath(); H.moveTo(-10,0); H.lineTo(10,0); H.moveTo(6,-5); H.lineTo(10,0); H.lineTo(6,5); H.stroke();
+    H.restore();
+    ft(9,'900'); tx(tgt.userData.n,ex,ey-10,CW,.7,'center');
     return;
   }
 
   // Corner brackets
-  const cs=18;
-  hud.save(); hud.strokeStyle=col; hud.lineWidth=thick; hud.globalAlpha=isLocked?0.92:0.72;
-  hud.lineCap='round';
+  H.save(); H.strokeStyle=col; H.lineWidth=locked?2:1.4; H.globalAlpha=locked?.92:.7; H.lineCap='round';
   [[bx,by,1,1],[bx+bw,by,-1,1],[bx,by+bh,1,-1],[bx+bw,by+bh,-1,-1]].forEach(([x,y,sx,sy])=>{
-    hud.beginPath(); hud.moveTo(x,y+sy*cs); hud.lineTo(x,y); hud.lineTo(x+sx*cs,y); hud.stroke();
+    H.beginPath(); H.moveTo(x,y+sy*cs); H.lineTo(x,y); H.lineTo(x+sx*cs,y); H.stroke();
   });
-  hud.restore();
+  H.restore();
 
   // Labels
-  setFont(12,'900');
-  txt(name, bx, by-13, col, isLocked?1:0.85);
-  txt(`${dist.toFixed(1)}m`, bx+bw, by-13, col, isLocked?0.9:0.7, 'right');
+  ft(11,'900');
+  tx(tgt.userData.n,bx,by-11,col,locked?1:.85);
+  tx(`${dist.toFixed(1)}m`,bx+bw,by-11,col,locked?.88:.7,'right');
 
-  if (isLocked) {
-    setFont(10,'900');
-    txt('◆ LOCKED', bx+bw/2, by-27, T.lock, 0.9, 'center');
+  if(locked){
+    ft(9,'900'); tx('◆ LOCKED',bx+bw/2,by-24,CR,.9,'center');
     // Scan line
-    const scanY = by + ((performance.now()*0.001*50)%(bh+0));
-    hud.save();
-    const sg=hud.createLinearGradient(bx,scanY-3,bx,scanY+3);
-    sg.addColorStop(0,'rgba(255,68,68,0)');sg.addColorStop(.5,'rgba(255,68,68,0.28)');sg.addColorStop(1,'rgba(255,68,68,0)');
-    hud.fillStyle=sg; hud.fillRect(bx,scanY-3,bw,6); hud.restore();
+    const sy2=by+((performance.now()*.0015*40)%bh);
+    H.save();
+    const sg=H.createLinearGradient(0,sy2-2,0,sy2+2);
+    sg.addColorStop(0,'rgba(255,68,68,0)'); sg.addColorStop(.5,'rgba(255,68,68,.22)'); sg.addColorStop(1,'rgba(255,68,68,0)');
+    H.fillStyle=sg; H.fillRect(bx,sy2-2,bw,4); H.restore();
   }
 }
 
-// ── 8. LOCK LOST NOTICE ──────────────────────────────────────────
-function drawLockLost() {
-  if (!S.lockLostTimer || performance.now() > S.lockLostTimer) return;
-  const a = Math.min(1,(S.lockLostTimer-performance.now())/400);
-  setFont(16,'900'); txt('TARGET LOST', cx, cy-80, T.lock, a*0.9, 'center');
+// ── LOCK LOST NOTICE ─────────────────────────────────────────────
+function drawLockLost(){
+  if(performance.now()>=S.lockLostUntil) return;
+  const a=Math.min(1,(S.lockLostUntil-performance.now())/500);
+  ft(13,'900'); tx('TARGET LOST',LW/2,LH/2-66,CR,a*.9,'center');
 }
 
-// ── 9. BOTTOM-RIGHT: WEATHER + AQI + POLLEN ──────────────────────
-function drawWeather() {
-  const pw=220, ph=162;
-  const ox=LW-pw-24, oy=LH-ph-24;
-  panel(ox,oy,pw,ph);
-
-  const rx=ox+pw-10;  // right-align x
+// ── BOTTOM-RIGHT: WEATHER / AQI / POLLEN ────────────────────────
+// Layout identical to original hud__3_.html .br panel
+function drawWeather(){
+  const pw=198,ph=148,ox=LW-pw-16,oy=LH-ph-16;
+  bgrect(ox,oy,pw,ph);
   let y=oy+18;
-  const row=(label,val,col=T.main,sz=11)=>{
-    setFont(9,'700'); txt(label, ox+10, y, T.dim, 0.65);
-    setFont(sz,'900'); txt(val, rx, y, col, 0.95, 'right');
-    y += 17;
+  const rr=(label,val,col2=C,sz=11,al=.88)=>{
+    ft(8,'700'); tx(label,ox+8,y,C,.5);
+    ft(sz,'900'); tx(val,ox+pw-8,y,fCol(col2,'weather'),al,'right');
+    y+=16;
   };
 
-  // Temp big
-  setFont(26,'900');
-  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=8;
-  txt(S.weather.temp, rx, oy+28, flashColor(T.main,'weather'), 0.95, 'right');
-  hud.restore();
-  setFont(10,'900'); txt(S.weather.cond, rx, oy+42, T.main, 0.75, 'right');
-  y = oy+60;
+  // Temp big — matches original "1.4rem"
+  H.save(); H.shadowColor=fCol(C,'weather'); H.shadowBlur=7;
+  ft(22,'900'); tx(S.wTemp,ox+pw-8,oy+24,fCol(C,'weather'),.95,'right');
+  H.restore();
+  ft(10,'900'); tx(S.wCond,ox+pw-8,oy+38,C,.8,'right');
+  y=oy+56;
+  rr('WIND',S.wWind);
+  rr('HUM',S.wHum);
+  ft(8,'700'); tx(S.wSun,ox+pw-8,y,C,.45,'right'); y+=14;
 
-  row('WIND', S.weather.wind);
-  row('HUM',  S.weather.hum);
-  setFont(9,'700'); txt(S.weather.sun, rx, y, T.dim, 0.5, 'right'); y+=14;
-
-  // Divider before AQI/pollen
-  if (S.aqi.val !== '--' || S.pollen.val !== '--') {
-    line(ox+8, y, ox+pw-8, y, T.main, 0.12, 1); y+=10;
-    if (S.aqi.val !== '--') {
-      setFont(9,'700'); txt('AQI', ox+10, y, T.dim, 0.65);
-      setFont(11,'900'); txt(`${S.aqi.val}`, rx-55, y, flashColor(S.aqi.color,'aqi'), 0.95, 'right');
-      setFont(9,'700'); txt(S.aqi.label, rx, y, flashColor(S.aqi.color,'aqi'), 0.85, 'right');
+  // Divider + AQI + pollen  (same as original envDivider / aqiRow / pollenRow)
+  const hasEnv=S.aqiVal!=='--'||S.pollenVal!=='--';
+  if(hasEnv){
+    ln(ox+6,y,ox+pw-6,y,C,.12); y+=10;
+    if(S.aqiVal!=='--'){
+      ft(8,'700'); tx('AQI',ox+8,y,C,.5);
+      ft(11,'900');
+      tx(S.aqiVal,ox+pw-8-H.measureText(S.aqiLabel).width-10,y,fCol(S.aqiColor,'aqi'),.95,'right');
+      tx(S.aqiLabel,ox+pw-8,y,fCol(S.aqiColor,'aqi'),.85,'right');
       y+=16;
     }
-    if (S.pollen.val !== '--') {
-      setFont(9,'700'); txt('POLLEN', ox+10, y, T.dim, 0.65);
-      setFont(9,'700'); txt(S.pollen.label, rx, y, flashColor(S.pollen.color,'aqi'), 0.85, 'right');
+    if(S.pollenVal!=='--'){
+      ft(8,'700'); tx('POLLEN',ox+8,y,C,.5);
+      ft(9,'900'); tx(S.pollenLabel,ox+pw-8,y,fCol(S.pollenColor,'aqi'),.9,'right');
     }
   }
 }
 
-// ── 10. BOTTOM-LEFT: MINIMAP ─────────────────────────────────────
-function drawMinimap() {
-  const R=72, mmCx=24+R, mmCy=LH-24-R;
+// ── BOTTOM-LEFT: MINIMAP ─────────────────────────────────────────
+function drawMinimap(){
+  const R=58, mcx=16+R, mcy=LH-16-R;
+  H.save();
+  H.beginPath(); H.arc(mcx,mcy,R,0,Math.PI*2); H.clip();
+  H.fillStyle='rgba(0,8,14,.82)'; H.fillRect(mcx-R,mcy-R,R*2,R*2);
 
-  // Background circle
-  hud.save();
-  hud.beginPath(); hud.arc(mmCx,mmCy,R,0,Math.PI*2); hud.clip();
-  rect(mmCx-R,mmCy-R,R*2,R*2,'rgba(0,5,10,0.88)');
-
-  if (S.geoLat==null) {
-    setFont(9,'900'); txt('NO SIGNAL',mmCx,mmCy+4,T.dim,0.4,'center'); hud.restore();
-  } else {
-    const hdg = S.headingSmooth??0;
-    const headRad = hdg*Math.PI/180;
-    const MM_RANGE=220;
-    const pxPerM = R/MM_RANGE;
-    const txf=lon2tf(S.geoLon,MAP_ZOOM), tyf=lat2tf(S.geoLat,MAP_ZOOM);
+  if(S.lat!=null){
+    const hdg=S.heading??0, hr=hdg*Math.PI/180;
+    const RANGE=200, ppm=R/RANGE;
+    const txf=lon2tf(S.lon,MZ), tyf=lat2tf(S.lat,MZ);
     const txi=Math.floor(txf), tyi=Math.floor(tyf);
-    const fracX=txf-txi, fracY=tyf-tyi;
-    const mpp=156543.03392*Math.cos(S.geoLat*Math.PI/180)/Math.pow(2,MAP_ZOOM);
-    const tileSize=256*(mpp/pxPerM/256);  // tile display size in logical px
+    const fx=txf-txi, fy=tyf-tyi;
+    const mpp=156543.03392*Math.cos(S.lat*Math.PI/180)/(1<<MZ);
+    const ts2=256*(mpp/ppm/256)*R/RANGE*256;
 
-    hud.save(); hud.translate(mmCx,mmCy); hud.rotate(-headRad);
-    hud.globalAlpha=0.35;
+    H.save(); H.translate(mcx,mcy); H.rotate(-hr); H.globalAlpha=.3;
     for(let dy=-2;dy<=2;dy++) for(let dx=-2;dx<=2;dx++){
-      const t=getTile(txi+dx,tyi+dy,MAP_ZOOM);
-      if(t.loaded){
-        const px=(dx-fracX)*tileSize,py=(dy-fracY)*tileSize;
-        hud.drawImage(t.img,px-tileSize/2,py-tileSize/2,tileSize,tileSize);
-      }
+      const t=getTile(txi+dx,tyi+dy,MZ);
+      if(t.ok) H.drawImage(t.img,(dx-fx)*ts2-ts2/2,(dy-fy)*ts2-ts2/2,ts2,ts2);
     }
-
     // Breadcrumbs
-    if (S.crumbs.length>1) {
-      hud.strokeStyle=T.accent; hud.lineWidth=2; hud.globalAlpha=0.55;
-      hud.lineCap='round'; hud.lineJoin='round'; hud.beginPath();
+    if(S.crumbs.length>1){
+      H.strokeStyle=CG; H.lineWidth=1.8; H.globalAlpha=.5; H.lineCap='round'; H.beginPath();
       S.crumbs.forEach((c,i)=>{
-        const p=llToPx(c.lat,c.lon,pxPerM);
-        i===0 ? hud.moveTo(p.x,p.y) : hud.lineTo(p.x,p.y);
+        const d=(c.lo-S.lon)*111320*Math.cos(S.lat*Math.PI/180)*ppm;
+        const e=-(c.la-S.lat)*111320*ppm;
+        i===0?H.moveTo(d,e):H.lineTo(d,e);
       });
-      hud.stroke();
+      H.stroke();
     }
-    hud.restore();
-
-    hud.restore(); // restore clip
-
-    // Grid rings
-    hud.save(); hud.strokeStyle=T.main; hud.lineWidth=0.6;
-    [0.4,0.7,1.0].forEach(f=>{
-      hud.globalAlpha=0.07; hud.beginPath(); hud.arc(mmCx,mmCy,R*f,0,Math.PI*2); hud.stroke();
-    });
-    // Cross
-    hud.globalAlpha=0.08; hud.lineWidth=0.5;
-    line(mmCx-R,mmCy,mmCx+R,mmCy,T.main,0.08,0.6);
-    line(mmCx,mmCy-R,mmCx,mmCy+R,T.main,0.08,0.6);
-    hud.restore();
-
-    // Cardinal labels
-    const CARD=[{l:'N',a:0,col:T.accent},{l:'E',a:90},{l:'S',a:180},{l:'W',a:270}];
-    const hdg2=S.headingSmooth??0;
-    setFont(8,'900'); hud.textAlign='center'; hud.textBaseline='middle';
-    CARD.forEach(cd=>{
-      const ang=(cd.a-hdg2)*Math.PI/180, r=R-9;
-      hud.fillStyle=cd.col||T.main; hud.globalAlpha=cd.l==='N'?1:0.4;
-      hud.fillText(cd.l, mmCx+Math.sin(ang)*r, mmCy-Math.cos(ang)*r);
-    });
-
-    // Player dot
-    hud.fillStyle='#fff'; hud.globalAlpha=0.9; hud.beginPath(); hud.arc(mmCx,mmCy,3.5,0,Math.PI*2); hud.fill();
-    hud.fillStyle=T.main; hud.globalAlpha=1; hud.beginPath(); hud.arc(mmCx,mmCy,2,0,Math.PI*2); hud.fill();
+    H.restore();
   }
 
-  // Border ring
-  hud.save(); hud.strokeStyle=T.main; hud.lineWidth=1.5; hud.globalAlpha=0.45;
-  hud.beginPath(); hud.arc(mmCx,mmCy,R,0,Math.PI*2); hud.stroke(); hud.restore();
+  H.restore(); // end clip
 
-  // Heading label below
-  const hdgLbl = S.headingSmooth!=null ? `HDG ${Math.round(S.headingSmooth).toString().padStart(3,'0')}°` : 'HDG ---°';
-  setFont(9,'900'); txt(hdgLbl, mmCx, mmCy+R+14, T.main, 0.55, 'center');
+  // Grid rings
+  H.save(); H.strokeStyle=C; H.lineWidth=.6;
+  [.4,.7,1].forEach(f=>{ H.globalAlpha=.07; H.beginPath(); H.arc(mcx,mcy,R*f,0,Math.PI*2); H.stroke(); });
+  // Cross hairs
+  H.globalAlpha=.08; H.lineWidth=.5;
+  H.beginPath(); H.moveTo(mcx-R,mcy); H.lineTo(mcx+R,mcy); H.stroke();
+  H.beginPath(); H.moveTo(mcx,mcy-R); H.lineTo(mcx,mcy+R); H.stroke();
+  H.restore();
 
-  // Speed below minimap
-  const spdStr = S.speedKmh.toFixed(1);
-  setFont(18,'900');
-  hud.save(); hud.shadowColor=T.main; hud.shadowBlur=6;
-  txt(spdStr, mmCx, mmCy+R+30, T.main, 0.85, 'center');
-  hud.restore();
-  setFont(8,'700'); txt('KM/H', mmCx, mmCy+R+40, T.dim, 0.4, 'center');
+  // Cardinals
+  const hdg2=S.heading??0;
+  const CARD2=[{l:'N',a:0,c:CG},{l:'E',a:90,c:C},{l:'S',a:180,c:C},{l:'W',a:270,c:C}];
+  H.save(); ft(8,'900'); H.textAlign='center'; H.textBaseline='middle';
+  CARD2.forEach(({l,a,c})=>{
+    const ang=(a-hdg2)*Math.PI/180,r=R-8;
+    H.fillStyle=c; H.globalAlpha=l==='N'?1:.4;
+    H.fillText(l,mcx+Math.sin(ang)*r,mcy-Math.cos(ang)*r);
+  });
+  H.restore();
+
+  // Player dot
+  H.save(); H.fillStyle='#fff'; H.globalAlpha=.9; H.beginPath(); H.arc(mcx,mcy,3,0,Math.PI*2); H.fill();
+  H.fillStyle=C; H.globalAlpha=1; H.beginPath(); H.arc(mcx,mcy,1.8,0,Math.PI*2); H.fill();
+  H.restore();
+
+  // Border
+  H.save(); H.strokeStyle=C; H.lineWidth=1.2; H.globalAlpha=.4;
+  H.beginPath(); H.arc(mcx,mcy,R,0,Math.PI*2); H.stroke(); H.restore();
+
+  // HDG label + speed
+  const hdgS=S.heading!=null?`HDG ${Math.round(S.heading).toString().padStart(3,'0')}°`:'HDG ---°';
+  ft(8,'700'); tx(hdgS,mcx,mcy+R+11,C,.5,'center');
+  H.save(); H.shadowColor=C; H.shadowBlur=5;
+  ft(15,'900'); tx(S.spdKmh.toFixed(1),mcx,mcy+R+26,C,.8,'center');
+  H.restore();
+  ft(7,'700'); tx('KM/H',mcx,mcy+R+36,C,.35,'center');
 }
 
-// ── 11. CENTRE HUD STATUS BAR ────────────────────────────────────
-function drawStatusBar() {
-  const locked=S.lockTarget!=null, hover=S.hoverHit!=null;
-  if (!locked && !hover) return;
-  const label=locked ? `◆ LOCKED: ${S.lockTarget.userData.hudName}` :
-                       `◉ HOVER: ${S.hoverHit.object.userData.hudName}`;
-  const col=locked?T.lock:T.warn;
-  setFont(11,'900'); hud.textAlign='center';
-  const tw=hud.measureText(label).width+20;
-  rect(cx-tw/2,LH-62,tw,18,'rgba(0,5,10,0.8)');
-  strokeRect(cx-tw/2,LH-62,tw,18,col,0.3,1);
-  txt(label,cx,LH-48,col,0.9,'center');
-}
-
-// ── FULL FRAME DRAW ──────────────────────────────────────────────
-function drawHUD() {
+// ── FULL FRAME ───────────────────────────────────────────────────
+function drawHUD(){
   cls();
   drawScanlines();
-  drawCorners();
+  drawFrame();
   drawCompass();
   drawClock();
   drawZoom();
   drawMinimap();
   drawWeather();
-  drawTargetOverlay();
+  drawTarget();
   drawReticle();
   drawLockLost();
-  drawStatusBar();
-  hudTex.needsUpdate = true;
+  hudTex.needsUpdate=true;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  KEYBOARD INPUT (desktop testing)
-// ═══════════════════════════════════════════════════════════════════
-window.addEventListener('keydown', e => {
-  if (e.key==='z'||e.key==='Z') cycleZoom();
-  if (e.key==='l'||e.key==='L') tryLock();
-});
-
-// ═══════════════════════════════════════════════════════════════════
-//  MAIN RENDER LOOP
-// ═══════════════════════════════════════════════════════════════════
-let frameN = 0;
-
-renderer.setAnimationLoop((time, frame) => {
+// ══════════════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ══════════════════════════════════════════════════════════════════
+let frameN=0;
+renderer.setAnimationLoop((time,frame)=>{
   frameN++;
-  const now = performance.now();
+  tickZoom();
+  tickSmooth();
+  if(frameN%2===0) tickRay();
 
-  updateZoom(now);
-  updateHeading();
-  smoothPose();
-
-  // Animate targets
-  selectables.forEach((m,i) => {
-    m.rotation.y += 0.004 * (i%2===0?1:-1);
-    m.position.y  = targetDefs[i].pos[1] + Math.sin(time*.001+i*.9)*.035;
+  // Animate targets (desktop/AR alike)
+  TDEFS.forEach((d,i)=>{
+    selectables[i].rotation.y+=.003*(i%2===0?1:-1);
+    selectables[i].position.y=d.p[1]+Math.sin(time*.001+i*.8)*.025;
   });
-
-  // Animate particles
-  scene.children.forEach(obj => {
-    if (obj.userData.floatSeed !== undefined) {
-      obj.position.y += Math.sin(time*.0008 + obj.userData.floatSeed) * .0004;
-      obj.rotation.y += .002;
-    }
-  });
-
-  // Raycast every 2nd frame
-  if (frameN % 2 === 0) doRaycast();
-
-  // XR controller input
-  if (S.inVR && frame) handleXRInput(frame);
 
   drawHUD();
 
-  renderer.render(scene, camera);
+  if(S.inAR && frame) handleXRInput(frame);
+
+  // In AR: clear only depth, let passthrough composite background
+  renderer.clear(false,true,false);
+  renderer.render(scene,camera);
 });
 
-// ═══════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════
 //  XR CONTROLLER INPUT
-// ═══════════════════════════════════════════════════════════════════
-function handleXRInput(frame) {
-  const session = renderer.xr.getSession();
-  if (!session) return;
-  let trigger=false, btnA=false;
-  for (const src of session.inputSources) {
-    if (!src.gamepad) continue;
-    const gp = src.gamepad;
-    if (gp.buttons[0]?.pressed) trigger=true;
-    if (gp.buttons[4]?.pressed || gp.buttons[2]?.pressed) btnA=true;
+// ══════════════════════════════════════════════════════════════════
+function handleXRInput(frame){
+  const session=renderer.xr.getSession();
+  if(!session) return;
+  let trig=false,btnA=false;
+  for(const src of session.inputSources){
+    if(!src.gamepad) continue;
+    if(src.gamepad.buttons[0]?.pressed) trig=true;
+    if(src.gamepad.buttons[4]?.pressed||src.gamepad.buttons[2]?.pressed) btnA=true;
   }
-  if (trigger && !S.prevTrigger) tryLock();
-  if (btnA   && !S.prevBtnA)   cycleZoom();
-  S.prevTrigger = trigger;
-  S.prevBtnA    = btnA;
+  if(trig&&!S.prevTrig) doLock();
+  if(btnA&&!S.prevBtnA) cycleZoom();
+  S.prevTrig=trig; S.prevBtnA=btnA;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  VR SESSION — IMMERSIVE-VR ONLY
-// ═══════════════════════════════════════════════════════════════════
-const enterBtn    = document.getElementById('enterBtn');
-const statusMsg   = document.getElementById('statusMsg');
-const launchScreen= document.getElementById('launchScreen');
+// ══════════════════════════════════════════════════════════════════
+//  AR SESSION — immersive-ar ONLY
+//  If not supported: says so clearly, does NOT fall back to VR.
+// ══════════════════════════════════════════════════════════════════
+const enterBtn=document.getElementById('enterBtn');
+const msgEl=document.getElementById('msg');
+const uiEl=document.getElementById('ui');
 
-// Check support
-(async () => {
-  if (!navigator.xr) {
-    statusMsg.textContent='WebXR not available in this browser.'; return;
+(async()=>{
+  if(!navigator.xr){
+    msgEl.textContent='webxr not available in this browser'; return;
   }
-  const vrOk = await navigator.xr.isSessionSupported('immersive-vr').catch(()=>false);
-  if (vrOk) {
-    enterBtn.disabled = false;
-    statusMsg.textContent='Quest 3 ready · trigger=lock · A=zoom · Z/L on keyboard';
+  const arOK=await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false);
+  if(arOK){
+    enterBtn.disabled=false;
+    msgEl.textContent='quest 3 ready · right trigger=lock · a=zoom · z/l on keyboard';
   } else {
-    enterBtn.disabled = true;
-    statusMsg.textContent='immersive-vr not supported · running desktop preview';
+    enterBtn.disabled=true;
+    msgEl.textContent=
+      '⚠ immersive-ar not supported. running desktop 2-d preview only. '+
+      'on quest 3: open in browser, enable passthrough in xr settings.';
   }
 })();
 
-window.enterVR = async function() {
-  if (!navigator.xr) { statusMsg.textContent='WebXR unavailable'; return; }
-
-  try {
-    const session = await navigator.xr.requestSession('immersive-vr', {
-      optionalFeatures: ['local-floor','bounded-floor','hand-tracking'],
+window.enterAR=async function(){
+  if(!navigator.xr||!await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false)){
+    msgEl.textContent='⚠ immersive-ar not supported on this device/browser. NOT falling back to VR.';
+    return;
+  }
+  try{
+    const session=await navigator.xr.requestSession('immersive-ar',{
+      requiredFeatures:['local'],
+      optionalFeatures:['local-floor','hand-tracking'],
     });
 
-    // Make renderer XR-compatible
-    await renderer.xr.setSession(session);
-    S.inVR = true; S.xrSession = session;
-    launchScreen.style.display = 'none';
-
-    // Resize HUD canvas to match XR framebuffer
-    session.addEventListener('visibilitychange', () => {});
-    session.addEventListener('end', () => {
-      S.inVR = false; S.xrSession = null;
-      launchScreen.style.display = 'flex';
-      enterBtn.textContent = '◈ ENTER VR';
-    });
-
-    // After first frame, query XR viewport resolution and upscale HUD canvas
-    const origAnimLoop = renderer.xr.getSession;
-    const firstFrameHook = () => {
-      const gl = renderer.getContext();
-      const baseLayer = session.renderState.baseLayer;
-      if (baseLayer) {
-        // Per-eye resolution — scale HUD canvas to match
-        const vp = baseLayer.getViewport(session.renderState.layers?.[0]);
-        // The WebGLLayer framebuffer is at XR resolution; our HUD needs to match
-        // We use the framebuffer dimensions for physical pixel count
-        const fbW = baseLayer.framebufferWidth;
-        const fbH = baseLayer.framebufferHeight;
-        if (fbW && fbH && (fbW !== hudCanvas.width || fbH !== hudCanvas.height)) {
-          hudCanvas.width  = fbW;
-          hudCanvas.height = fbH;
-          hud.resetTransform();
-          // Scale so logical coords (HUD_LW×HUD_LH) fill the framebuffer
-          hud.scale(fbW/HUD_LW, fbH/HUD_LH);
-          hudTex.needsUpdate = true;
+    // Resize HUD canvas to match XR framebuffer for max crispness
+    session.addEventListener('visibilitychange',()=>{});
+    session.requestAnimationFrame((_,fr)=>{
+      if(!fr) return;
+      const bl=session.renderState.baseLayer;
+      if(bl){
+        const fw=bl.framebufferWidth, fh=bl.framebufferHeight;
+        if(fw&&fh){
+          hudCvs.width=fw; hudCvs.height=fh;
+          H.resetTransform();
+          // Keep drawing in logical LW×LH coords
+          H.scale(fw/LW, fh/LH);
+          hudTex.needsUpdate=true;
         }
       }
-    };
-    // Hook into first animation frame
-    session.requestAnimationFrame(() => { firstFrameHook(); });
+    });
 
-    enterBtn.textContent = '◈ EXIT VR';
+    await renderer.xr.setSession(session);
+    S.inAR=true;
+    uiEl.style.display='none';
 
-  } catch(err) {
-    statusMsg.textContent = `VR Error: ${err.message}`;
-    console.error('XR error:', err);
+    session.addEventListener('end',()=>{
+      S.inAR=false;
+      uiEl.style.display='flex';
+      enterBtn.textContent='◈ ENTER AR';
+    });
+    enterBtn.textContent='◈ EXIT AR';
+
+  }catch(err){
+    msgEl.textContent='ar session error: '+err.message;
+    console.error(err);
   }
 };
 
-// ═══════════════════════════════════════════════════════════════════
-//  RESIZE
-// ═══════════════════════════════════════════════════════════════════
-window.addEventListener('resize', () => {
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  camera.aspect = window.innerWidth / window.innerHeight;
+// Keyboard (desktop preview)
+window.addEventListener('keydown',e=>{
+  if(e.key==='z'||e.key==='Z') cycleZoom();
+  if(e.key==='l'||e.key==='L') doLock();
+});
+
+// Resize
+window.addEventListener('resize',()=>{
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  camera.aspect=window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
-  resizeHudPlane();
+  // HUD plane and canvas do NOT resize on window resize — only on XR framebuffer
 });
 
 </script>
