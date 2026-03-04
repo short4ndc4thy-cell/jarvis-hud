@@ -1,1011 +1,671 @@
-from pathlib import Path
-html = r"""<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Quest 3 AR HUD (Canvas Only)</title>
-  <style>
-    html, body { margin:0; padding:0; width:100%; height:100%; background:transparent; overflow:hidden; }
-    canvas { display:block; width:100%; height:100%; touch-action:none; background:transparent; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HUD</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+body.theme-cyan{ --c:#00e5ff; --glow:0 0 10px rgba(0,229,255,.6); }
+body.theme-green{ --c:#76ff03; --glow:0 0 10px rgba(118,255,3,.6); }
+body.theme-amber{ --c:#ffb300; --glow:0 0 10px rgba(255,179,0,.6); }
+body.theme-red{   --c:#ff1744; --glow:0 0 10px rgba(255,23,68,.6); }
+body.theme-white{ --c:#e0e0e0; --glow:0 0 8px rgba(220,220,220,.4); }
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100vw;height:100vh;overflow:hidden;background:transparent;}
+body{color:var(--c);font-family:'Share Tech Mono',monospace;}
+.corner{position:fixed;width:32px;height:32px;border-color:var(--c);opacity:.4;border-style:solid;z-index:10;}
+.corner.tl{top:14px;left:14px;border-width:1.5px 0 0 1.5px;}
+.corner.tr{top:14px;right:14px;border-width:1.5px 1.5px 0 0;}
+.corner.bl{bottom:14px;left:14px;border-width:0 0 1.5px 1.5px;}
+.corner.br{bottom:14px;right:14px;border-width:0 1.5px 1.5px 0;}
+.tl{position:fixed;top:18px;left:18px;display:flex;flex-direction:column;gap:4px;z-index:10;}
+.clock{font-family:'Orbitron',monospace;font-size:1.6rem;font-weight:900;color:var(--c);text-shadow:var(--glow);letter-spacing:.08em;line-height:1;}
+.date{font-size:.7rem;font-weight:700;color:var(--c);opacity:.7;letter-spacing:.15em;}
+.area{font-size:.72rem;font-weight:900;color:var(--c);letter-spacing:.12em;margin-top:2px;text-shadow:var(--glow);}
+.street{font-size:.62rem;font-weight:700;color:var(--c);opacity:.7;letter-spacing:.08em;}
+.area.updating{animation:pulse-text .6s ease;}
+@keyframes pulse-text{0%{opacity:1;text-shadow:0 0 20px var(--c),0 0 40px var(--c);}50%{opacity:.4;}100%{opacity:1;text-shadow:var(--glow);}}
+.tr{position:fixed;top:18px;right:18px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;z-index:10;}
+.stat{display:flex;align-items:center;gap:7px;}
+.slbl{font-size:.62rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.85;letter-spacing:.15em;}
+.sbar{width:64px;height:4px;background:rgba(255,255,255,.05);border:1px solid var(--c);overflow:hidden;}
+.sf{height:100%;transition:width 1s ease;}
+.sf.g{background:#76ff03;box-shadow:0 0 6px rgba(118,255,3,.5);}
+.sf.c{background:var(--c);box-shadow:0 0 4px var(--c);}
+.sf.o{background:#ff6d00;}.sf.r{background:#ff1744;}
+.sval{font-size:.62rem;font-weight:900;color:var(--c);min-width:28px;text-align:right;font-family:'Orbitron',monospace;}
+.sys-row{font-size:.6rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);display:flex;gap:5px;align-items:center;justify-content:flex-end;}
+.sys-lbl{opacity:.7;}
+.bl{position:fixed;bottom:18px;left:18px;display:flex;flex-direction:column;gap:3px;z-index:10;}
+.loc-row{display:flex;gap:6px;align-items:baseline;}
+.lloc{font-size:.62rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.8;letter-spacing:.14em;width:28px;}
+.lval{font-size:.68rem;font-weight:700;color:var(--c);letter-spacing:.03em;}
+.gps-status{font-size:.58rem;font-weight:900;font-family:'Orbitron',monospace;letter-spacing:.14em;margin-top:2px;}
+.gps-status.acquiring{color:#ff6d00;animation:blink-acq 1.2s ease-in-out infinite;}
+.gps-status.locked{color:#76ff03;}.gps-status.denied{color:#ff1744;}
+@keyframes blink-acq{0%,100%{opacity:1;}50%{opacity:.3;}}
+#poiPanel{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:10;display:flex;flex-direction:column;gap:3px;max-width:210px;}
+.poi-hdr{font-size:.5rem;font-weight:900;font-family:'Orbitron',monospace;letter-spacing:.2em;color:var(--c);opacity:.6;margin-bottom:2px;}
+.poi-row{font-size:.58rem;font-weight:700;color:var(--c);letter-spacing:.04em;display:flex;gap:5px;align-items:baseline;opacity:.95;}
+.poi-dist{opacity:.65;min-width:40px;font-weight:900;}
+.br{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:4px;align-items:flex-end;z-index:10;}
+.temp{font-family:'Orbitron',monospace;font-size:1.4rem;font-weight:700;color:var(--c);text-shadow:var(--glow);}
+.cond{font-size:.68rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.9;letter-spacing:.16em;}
+.wrow{font-size:.64rem;font-weight:900;font-family:'Orbitron',monospace;color:var(--c);opacity:.85;display:flex;gap:6px;align-items:center;}
+.wval{opacity:1;}
+.sunrow{font-size:.56rem;font-weight:700;color:var(--c);opacity:.55;}
+.divider{width:100%;height:1px;background:var(--c);opacity:.15;margin:2px 0;}
+.flash{animation:flash-val .7s ease;}
+@keyframes flash-val{0%{opacity:1;filter:brightness(3);}40%{opacity:.5;}100%{opacity:1;filter:brightness(1);}}
+#scanLines{position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:50;opacity:1;}
+#themeSweep{position:fixed;top:0;left:-100vw;width:100vw;height:100vh;pointer-events:none;z-index:60;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.18) 50%,transparent 100%);transition:none;}
+#themeSweep.sweeping{animation:sweep-anim .45s ease-out forwards;}
+@keyframes sweep-anim{0%{left:-100vw;}100%{left:100vw;}}
+#gpsRipple{position:fixed;bottom:36px;left:18px;width:0;height:0;pointer-events:none;z-index:15;}
+.ripple-ring{position:absolute;border-radius:50%;border:1.5px solid var(--c);animation:ripple-out .9s ease-out forwards;transform:translate(-50%,-50%);}
+@keyframes ripple-out{0%{width:0;height:0;opacity:.9;}100%{width:120px;height:120px;opacity:0;}}
+#threatPanel{margin-top:4px;}
+.threat-hdr{font-size:.5rem;font-weight:900;font-family:'Orbitron',monospace;letter-spacing:.2em;color:var(--c);opacity:.5;}
+.threat-val{font-family:'Orbitron',monospace;font-size:.72rem;font-weight:900;letter-spacing:.1em;margin-top:1px;}
+.threat-bar-wrap{width:90px;height:3px;background:rgba(255,255,255,.06);border:1px solid var(--c);overflow:hidden;margin-top:2px;opacity:.6;}
+.threat-bar-fill{height:100%;transition:width .8s ease;}
+.threat-sub{font-size:.48rem;font-weight:700;color:var(--c);opacity:.5;letter-spacing:.1em;margin-top:2px;}
+.alerts{position:fixed;top:18px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:3px;align-items:center;z-index:20;pointer-events:none;}
+.alert{font-size:.52rem;font-weight:700;letter-spacing:.16em;padding:.15rem .55rem;border:1px solid;text-transform:uppercase;animation:alert-in .25s ease both;}
+.alert.ok{border-color:rgba(118,255,3,.4);color:#76ff03;}
+.alert.warn{border-color:rgba(255,109,0,.45);color:#ff6d00;}
+.alert.info{border-color:var(--c);color:var(--c);opacity:.85;}
+.alert.danger{border-color:rgba(255,23,68,.45);color:#ff1744;}
+@keyframes alert-in{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+#minimapWrap{position:fixed;right:18px;top:50%;transform:translateY(-50%);z-index:12;pointer-events:none;}
+#minimapCanvas{display:block;}
+.mm-heading-lbl{font-family:'Orbitron',monospace;font-size:.5rem;font-weight:900;color:var(--c);letter-spacing:.2em;text-align:center;margin-top:4px;opacity:.6;}
+#compassWrap{position:fixed;top:46px;left:50%;transform:translateX(-50%);z-index:12;pointer-events:none;}
+#compassCanvas{display:block;}
+#horizonWrap{position:fixed;bottom:50%;left:50%;transform:translate(-50%,50%);z-index:5;pointer-events:none;opacity:.7;}
+#horizonCanvas{display:block;}
+#edgeArrowCanvas{position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:11;}
+#speedPanel{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:12;pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:2px;}
+.spd-val{font-family:'Orbitron',monospace;font-size:1.6rem;font-weight:900;color:var(--c);text-shadow:var(--glow);letter-spacing:.05em;line-height:1;}
+.spd-unit{font-family:'Orbitron',monospace;font-size:.42rem;font-weight:900;color:var(--c);opacity:.5;letter-spacing:.22em;}
+.odo-row{display:flex;gap:10px;align-items:center;}
+.odo-lbl{font-family:'Orbitron',monospace;font-size:.44rem;font-weight:900;color:var(--c);opacity:.5;letter-spacing:.18em;}
+.odo-val{font-family:'Orbitron',monospace;font-size:.6rem;font-weight:700;color:var(--c);opacity:.8;letter-spacing:.08em;}
+#themePicker{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:100;align-items:center;}
+.tpBtn{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.18);cursor:pointer;transition:transform .15s,border-color .15s;}
+.tpBtn:hover,.tpBtn.active{transform:scale(1.4);border-color:rgba(255,255,255,.7);}
+.tpBtn.tc{background:#00e5ff;}.tpBtn.tg{background:#76ff03;}.tpBtn.ta{background:#ffb300;}.tpBtn.tr2{background:#ff1744;}.tpBtn.tw{background:#ddd;}
+#xrbtn{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:transparent;border:1px solid var(--c);color:var(--c);font-family:'Orbitron',monospace;font-size:.55rem;letter-spacing:.22em;padding:.4rem .9rem;cursor:pointer;text-transform:uppercase;z-index:100;text-shadow:var(--glow);transition:all .2s;opacity:.75;}
+#xrbtn:hover{opacity:1;background:var(--c);color:#000;}
+#permBtn{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.85);border:1px solid var(--c);color:var(--c);font-family:'Orbitron',monospace;font-size:.65rem;letter-spacing:.22em;padding:.7rem 1.5rem;cursor:pointer;text-transform:uppercase;z-index:9999;text-shadow:var(--glow);}
+#hud2d{display:none;}
+#hudMirror{position:fixed;right:10px;bottom:10px;width:180px;height:90px;border:1px solid rgba(0,229,255,.18);display:none;z-index:10000;}
+#nvPanel{position:fixed;bottom:114px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;z-index:100;}
+#nvBtn{background:transparent;border:1px solid var(--c);color:var(--c);font-family:'Orbitron',monospace;font-size:.5rem;letter-spacing:.2em;padding:.3rem .8rem;cursor:pointer;text-transform:uppercase;text-shadow:var(--glow);transition:all .2s;opacity:.65;}
+#nvBtn:hover{opacity:1;}
+#nvBtn.active{opacity:1;background:rgba(255,255,255,.06);border-color:var(--c);box-shadow:0 0 12px var(--c),inset 0 0 8px rgba(255,255,255,.04);}
+#nvSub{display:none;flex-direction:column;align-items:center;gap:5px;}
+#nvSub.visible{display:flex;}
+.nv-row{display:flex;align-items:center;gap:7px;}
+.nv-lbl{font-family:'Orbitron',monospace;font-size:.42rem;font-weight:900;color:var(--c);opacity:.6;letter-spacing:.18em;width:32px;text-align:right;}
+.nvDot{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.18);cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s;}
+.nvDot:hover,.nvDot.active{transform:scale(1.35);border-color:rgba(255,255,255,.8);box-shadow:0 0 6px currentColor;}
+.nvDot.nv-red{background:#ff1744;color:#ff1744;}.nvDot.nv-amber{background:#ffb300;color:#ffb300;}
+.nvDot.nv-cyan{background:#00e5ff;color:#00e5ff;}.nvDot.nv-green{background:#76ff03;color:#76ff03;}
+#nvStatus{font-family:'Orbitron',monospace;font-size:.4rem;letter-spacing:.16em;color:var(--c);opacity:.45;margin-top:1px;}
+</style>
 </head>
-<body>
-<canvas id="c"></canvas>
+<body class="theme-cyan">
+<canvas id="hudMirror" width="180" height="90"></canvas>
+<canvas id="hud2d" width="900" height="450"></canvas>
+<canvas id="scanLines"></canvas>
+<div id="themeSweep"></div>
+<div id="gpsRipple"></div>
+<div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+<div class="tl"><div class="clock" id="clock">00:00:00</div><div class="date" id="date">-- --- ----</div><div class="area" id="area">LOCATING...</div><div class="street" id="street"></div></div>
+<div class="tr">
+  <div class="stat"><div class="slbl">BAT</div><div class="sbar"><div class="sf g" id="batF" style="width:85%"></div></div><div class="sval" id="batV">85%</div></div>
+  <div class="stat"><div class="slbl">NET</div><div class="sbar"><div class="sf c" id="netF" style="width:0%"></div></div><div class="sval" id="netV">--</div></div>
+  <div class="sys-row"><span class="sys-lbl">CPU</span><span id="cpuV">--%</span></div>
+  <div class="sys-row"><span class="sys-lbl">MEM</span><span id="memV">-- MB</span></div>
+</div>
+<div class="bl">
+  <div class="loc-row"><div class="lloc">LAT</div><div class="lval" id="latV">--</div></div>
+  <div class="loc-row"><div class="lloc">LON</div><div class="lval" id="lonV">--</div></div>
+  <div class="gps-status acquiring" id="gpsS">● GPS ACQUIRING</div>
+  <div id="threatPanel" style="display:none"><div class="threat-hdr">THREAT LEVEL</div><div class="threat-val" id="threatVal">--</div><div class="threat-bar-wrap"><div class="threat-bar-fill" id="threatBar" style="width:0%"></div></div><div class="threat-sub" id="threatSub">ACQUIRING DATA</div></div>
+</div>
+<div id="poiPanel"></div>
+<div class="br"><div class="temp" id="wTemp">--°</div><div class="cond" id="wCond">--</div><div class="wrow"><span>WIND</span><span class="wval" id="wWind">--</span><span>km/h</span></div><div class="wrow"><span>HUM</span><span class="wval" id="wHum">--%</span></div><div class="sunrow" id="wSun">↑ -- · ↓ --</div><div class="divider" id="envDivider" style="display:none"></div><div class="wrow" id="aqiRow" style="display:none"><span>AQI</span><span class="wval" id="wAqi">--</span><span id="wAqiLbl"></span></div><div class="wrow" id="pollenRow" style="display:none"><span>POLLEN</span><span class="wval" id="wPollen">--</span><span id="wPollenLbl"></span></div></div>
+<div class="alerts" id="alerts"></div>
+<div id="compassWrap"><canvas id="compassCanvas" width="320" height="32"></canvas></div>
+<div id="horizonWrap"><canvas id="horizonCanvas" width="200" height="120"></canvas></div>
+<canvas id="edgeArrowCanvas"></canvas>
+<div id="speedPanel"><div class="spd-val" id="spdVal">0.0</div><div class="spd-unit">KM/H</div><div class="odo-row"><span class="odo-lbl">ODO</span><span class="odo-val" id="odoVal">0.000 km</span></div></div>
+<div id="minimapWrap"><canvas id="minimapCanvas" width="160" height="160"></canvas><div class="mm-heading-lbl" id="mmHeadingLbl">HDG ---°</div></div>
+<div id="nvPanel"><div id="nvSub"><div class="nv-row"><span class="nv-lbl">DARK</span><div class="nvDot nv-red active" id="nvd-red" title="Red" onclick="setNvDark('red',this)"></div><div class="nvDot nv-amber" id="nvd-amber" title="Amber" onclick="setNvDark('amber',this)"></div></div><div class="nv-row"><span class="nv-lbl">LIGHT</span><div class="nvDot nv-cyan active" id="nvl-cyan" title="Cyan" onclick="setNvLight('cyan',this)"></div><div class="nvDot nv-green" id="nvl-green" title="Green" onclick="setNvLight('green',this)"></div></div><div id="nvStatus">● STANDBY</div></div><button id="nvBtn" onclick="toggleNV()">◈ AUTO NV</button></div>
+<div id="themePicker"><div class="tpBtn tc active" onclick="setTheme('cyan',this)" title="Cyan"></div><div class="tpBtn tg" onclick="setTheme('green',this)" title="Green"></div><div class="tpBtn ta" onclick="setTheme('amber',this)" title="Amber"></div><div class="tpBtn tr2" onclick="setTheme('red',this)" title="Red"></div><div class="tpBtn tw" onclick="setTheme('white',this)" title="White"></div></div>
+<button id="xrbtn" onclick="enterXR()">◈ ENTER AR MODE</button>
+<button id="permBtn" onclick="requestPerms()">◈ ENABLE SENSORS</button>
 
 <script>
-/*
-Quest 3 WebXR AR HUD (no DOM UI; HUD is drawn on 2D canvases and composited in WebGL).
-Core features:
-- immersive-ar (passthrough background), transparent rendering
-- Hit-test reticle (real world surface point when available)
-- Lock/unlock + tracking (locks the current hit point; uses anchors if supported)
-- Zoom that affects scene projection (NOT HUD scaling)
-- Weather + Time + AQI + Pollen (Open-Meteo), drawn in HUD
-Controls:
-- Trigger (select): lock/unlock target
-- Grip (squeeze): cycle zoom (1x -> 2x -> 4x -> 8x -> 10x)
-If hit-test is unavailable, lock/hover becomes "no target".
-*/
+var THEMES={cyan:{c:'#00e5ff',c2:'#ff6d00',c3:'#76ff03',cr:'#ff1744'},green:{c:'#76ff03',c2:'#ff6d00',c3:'#00e5ff',cr:'#ff1744'},amber:{c:'#ffb300',c2:'#ff6d00',c3:'#76ff03',cr:'#ff1744'},red:{c:'#ff1744',c2:'#ff6d00',c3:'#76ff03',cr:'#ff6d00'},white:{c:'#e0e0e0',c2:'#ff6d00',c3:'#76ff03',cr:'#ff1744'}};
+var currentTheme='cyan';
+function setTheme(name,btn){
+  if(btn&&nvActive){nvActive=false;nvCurrentMode='';nvBrightSamples=[];clearInterval(nvLoopId);nvLoopId=null;if(nvStream){nvStream.getTracks().forEach(function(t){t.stop();});nvStream=null;}if(nvVideo){nvVideo.srcObject=null;nvVideo.remove();nvVideo=null;}document.getElementById('nvBtn').classList.remove('active');document.getElementById('nvSub').classList.remove('visible');document.getElementById('nvStatus').textContent='● STANDBY';document.getElementById('nvStatus').style.color='';}
+  currentTheme=name;document.body.className='theme-'+name;
+  document.querySelectorAll('.tpBtn').forEach(function(b){b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  themeSweep();
+}
+function TC(){return THEMES[currentTheme].c;}function TC2(){return THEMES[currentTheme].c2;}function TC3(){return THEMES[currentTheme].c3;}function TCR(){return THEMES[currentTheme].cr;}
+function clamp(n,a,b){return Math.max(a,Math.min(b,n));}
 
-(() => {
-  const canvas = document.getElementById('c');
+/* STATE */
+var lat=null,lon=null,geoWatchId=null,batPct=85,weatherFetched=false;
+var lastArea='',lastStreet='',lastAqi=null,lastPollen=null,alertsState=[];
+var isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+var DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+var MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+var GPS_TIMEOUT=60000,GPS_RETRY_DELAY=5000,gpsRetryTimer=null,gpsAttempts=0,GPS_MAX_ATTEMPTS=10;
+var poiData=[],cpuSamples=[],lastGpsState='',threatFetched=false;
+var GLITCH_CHARS='!@#$%^&*<>?/\\|[]{}01';
+var c2dSweepY=0,c2dThemeSweepX=-9999,c2dThemeSweeping=false;
 
-  // ---------- Utility (math) ----------
-  function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
-  function lerp(a,b,t){ return a + (b-a)*t; }
+var mapHeading=null,mapHeadingTarget=null,mapHeadingRaw=null,MAP_ZOOM=17;
+var mapTileCache={},lastTileCenterX=-1,lastTileCenterY=-1,MM_RANGE_METERS=250;
+var MM_DOM_RADIUS=76,mmDomCanvas=null,mmDomCtx=null;
+var headingSource=null;
 
-  function mat4Mul(out, a, b){
-    // column-major out = a*b
-    const a00=a[0],a01=a[1],a02=a[2],a03=a[3];
-    const a10=a[4],a11=a[5],a12=a[6],a13=a[7];
-    const a20=a[8],a21=a[9],a22=a[10],a23=a[11];
-    const a30=a[12],a31=a[13],a32=a[14],a33=a[15];
+var speedKmh=0,speedRaw=0,totalDistMeters=0,breadcrumbs=[],BREADCRUMB_MAX=400;
+var lastSpeedLat=null,lastSpeedLon=null,lastSpeedTime=null,speedSamples=[],SPEED_SAMPLE_SIZE=4;
+var lastBearingLat=null,lastBearingLon=null;
 
-    const b00=b[0],b01=b[1],b02=b[2],b03=b[3];
-    const b10=b[4],b11=b[5],b12=b[6],b13=b[7];
-    const b20=b[8],b21=b[9],b22=b[10],b23=b[11];
-    const b30=b[12],b31=b[13],b32=b[14],b33=b[15];
+var ahPitch=0,ahRoll=0;
+var xrHeadingOffset=0,xrInitialYaw=null;
 
-    out[0]=a00*b00+a10*b01+a20*b02+a30*b03;
-    out[1]=a01*b00+a11*b01+a21*b02+a31*b03;
-    out[2]=a02*b00+a12*b01+a22*b02+a32*b03;
-    out[3]=a03*b00+a13*b01+a23*b02+a33*b03;
+/* ZOOM */
+var hudZoom=1.0,HUD_ZOOM_MIN=0.5,HUD_ZOOM_MAX=3.0,HUD_ZOOM_STEP=0.04;
 
-    out[4]=a00*b10+a10*b11+a20*b12+a30*b13;
-    out[5]=a01*b10+a11*b11+a21*b12+a31*b13;
-    out[6]=a02*b10+a12*b11+a22*b12+a32*b13;
-    out[7]=a03*b10+a13*b11+a23*b12+a33*b13;
+/* NV */
+var nvActive=false,nvStream=null,nvVideo=null,nvCanvas=null,nvCtx=null;
+var nvDarkTheme='red',nvLightTheme='cyan',nvBrightSamples=[],NV_SAMPLE_SIZE=8;
+var nvCurrentMode='',NV_DARK_THRESH=55,NV_LIGHT_THRESH=90;
 
-    out[8]=a00*b20+a10*b21+a20*b22+a30*b23;
-    out[9]=a01*b20+a11*b21+a21*b22+a31*b23;
-    out[10]=a02*b20+a12*b21+a22*b22+a32*b23;
-    out[11]=a03*b20+a13*b21+a23*b22+a33*b23;
+window.addEventListener('DOMContentLoaded',function(){
+  startClock();startBattery();startGPS();startSysStats();startNetwork();
+  startScanLines();startHeading();startDOMWidgets();
+  nvCanvas=document.createElement('canvas');nvCanvas.width=32;nvCanvas.height=32;
+  nvCtx=nvCanvas.getContext('2d',{willReadFrequently:true});
+  if(isIOS)document.getElementById('permBtn').style.display='block';
+  addAlert('HUD ONLINE','ok');
+});
 
-    out[12]=a00*b30+a10*b31+a20*b32+a30*b33;
-    out[13]=a01*b30+a11*b31+a21*b32+a31*b33;
-    out[14]=a02*b30+a12*b31+a22*b32+a32*b33;
-    out[15]=a03*b30+a13*b31+a23*b32+a33*b33;
-    return out;
-  }
+function startClock(){function tick(){var n=new Date();document.getElementById('clock').textContent=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds());document.getElementById('date').textContent=DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear();}tick();setInterval(tick,1000);}
+function p(n){return String(n).padStart(2,'0');}
 
-  function projectToScreen(outXY, worldXYZ, viewMat, projMat, w, h){
-    const x=worldXYZ[0], y=worldXYZ[1], z=worldXYZ[2];
-    // view * vec4
-    const vx = viewMat[0]*x + viewMat[4]*y + viewMat[8]*z + viewMat[12];
-    const vy = viewMat[1]*x + viewMat[5]*y + viewMat[9]*z + viewMat[13];
-    const vz = viewMat[2]*x + viewMat[6]*y + viewMat[10]*z + viewMat[14];
-    const vw = viewMat[3]*x + viewMat[7]*y + viewMat[11]*z + viewMat[15];
+function flashEl(el){if(!el)return;el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');}
+var glitchTimers={};
+function setVal(id,val){var el=document.getElementById(id);if(!el)return;var strVal=String(val);if(el.textContent===strVal)return;if(glitchTimers[id]){clearInterval(glitchTimers[id]);delete glitchTimers[id];}var target=strVal,len=Math.max(target.length,2),frames=0,maxFrames=8;glitchTimers[id]=setInterval(function(){frames++;if(frames>=maxFrames){clearInterval(glitchTimers[id]);delete glitchTimers[id];el.textContent=target;flashEl(el);return;}var revealed=Math.floor((frames/maxFrames)*len),out='';for(var i=0;i<len;i++){if(i<revealed)out+=target[i]||'';else out+=GLITCH_CHARS[Math.floor(Math.random()*GLITCH_CHARS.length)];}el.textContent=out;},30);}
 
-    // proj * v
-    const cx = projMat[0]*vx + projMat[4]*vy + projMat[8]*vz + projMat[12]*vw;
-    const cy = projMat[1]*vx + projMat[5]*vy + projMat[9]*vz + projMat[13]*vw;
-    const cz = projMat[2]*vx + projMat[6]*vy + projMat[10]*vz + projMat[14]*vw;
-    const cw = projMat[3]*vx + projMat[7]*vy + projMat[11]*vz + projMat[15]*vw;
+function startBattery(){if(!navigator.getBattery)return;navigator.getBattery().then(function(bat){function upd(){var prev=batPct;batPct=Math.round(bat.level*100);document.getElementById('batF').style.width=batPct+'%';document.getElementById('batV').textContent=batPct+'%';document.getElementById('batF').className='sf '+(batPct>50?'g':batPct>20?'o':'r');if(batPct!==prev)flashEl(document.getElementById('batV'));if(batPct<20)addAlert('LOW BATTERY '+batPct+'%','warn');}upd();bat.addEventListener('levelchange',upd);});}
 
-    if (cw === 0) return false;
-    const ndcX = cx / cw;
-    const ndcY = cy / cw;
-    const ndcZ = cz / cw;
+function startNetwork(){function upd(){var conn=navigator.connection||navigator.mozConnection||navigator.webkitConnection;var label='--',pct=0;if(conn){label=(conn.effectiveType||conn.type||'--').toUpperCase();var map={'slow-2g':15,'2g':30,'3g':65,'4g':90,'wifi':100,'cellular':70};pct=map[conn.effectiveType]||map[conn.type]||50;}else if(navigator.onLine){label='ONLINE';pct=80;}else{label='OFFLINE';pct=0;}document.getElementById('netF').style.width=pct+'%';document.getElementById('netV').textContent=label;}upd();window.addEventListener('online',upd);window.addEventListener('offline',upd);if(navigator.connection)navigator.connection.addEventListener('change',upd);}
 
-    // behind camera or too far clipped
-    if (ndcZ < -1 || ndcZ > 1) {
-      // still may be okay for HUD indicator; but for bracket it’s usually useless
-    }
-    outXY[0] = (ndcX * 0.5 + 0.5) * w;
-    outXY[1] = (-ndcY * 0.5 + 0.5) * h;
-    outXY[2] = ndcZ;
-    return true;
-  }
+function startSysStats(){var lastT=0;setInterval(function(){var mem=performance.memory;if(mem){var usedMB=Math.round(mem.usedJSHeapSize/1048576);document.getElementById('memV').textContent=usedMB+' MB';document.getElementById('memV').style.color=usedMB>500?'#ff1744':usedMB>200?'#ff6d00':'';}else{document.getElementById('memV').textContent='N/A';}var now=performance.now();if(lastT){var jank=Math.min(100,Math.max(0,Math.round((now-lastT-16.67)/16.67*100)));cpuSamples.push(jank);if(cpuSamples.length>8)cpuSamples.shift();var avg=Math.round(cpuSamples.reduce(function(a,b){return a+b;},0)/cpuSamples.length);document.getElementById('cpuV').textContent=avg+'%';document.getElementById('cpuV').style.color=avg>80?'#ff1744':avg>50?'#ff6d00':'';}lastT=now;},1000);}
 
-  function makeZoomedProjection(out, baseProj, zoomFactor){
-    // Copy then scale m00/m11 to narrow FOV (zoom in).
-    for (let i=0;i<16;i++) out[i]=baseProj[i];
-    out[0] = baseProj[0] * zoomFactor;
-    out[5] = baseProj[5] * zoomFactor;
-    return out;
-  }
+/* GPS BEARING for Quest 3 (no magnetometer) */
+function gpsBearing(lat1,lon1,lat2,lon2){
+  var dLon=(lon2-lon1)*Math.PI/180;
+  var la1=lat1*Math.PI/180,la2=lat2*Math.PI/180;
+  var y=Math.sin(dLon)*Math.cos(la2);
+  var x=Math.cos(la1)*Math.sin(la2)-Math.sin(la1)*Math.cos(la2)*Math.cos(dLon);
+  return(Math.atan2(y,x)*180/Math.PI+360)%360;
+}
 
-  // ---------- HUD (env data) ----------
-  const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-  const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  function pad2(n){ return String(n).padStart(2,'0'); }
-  function wCode(code){
-    if(code===0) return 'CLEAR';
-    if(code<=2) return 'PARTLY CLOUDY';
-    if(code<=3) return 'OVERCAST';
-    if(code<=49) return 'FOG';
-    if(code<=59) return 'DRIZZLE';
-    if(code<=69) return 'RAIN';
-    if(code<=79) return 'SNOW';
-    if(code<=82) return 'SHOWERS';
-    if(code<=99) return 'STORM';
-    return '--';
-  }
-  function aqiInfo(v){
-    if(v<=20) return {label:'GOOD', color:'#76ff03'};
-    if(v<=40) return {label:'FAIR', color:'#76ff03'};
-    if(v<=60) return {label:'MODERATE', color:'#ff6d00'};
-    if(v<=80) return {label:'POOR', color:'#ff6d00'};
-    if(v<=100) return {label:'VERY POOR', color:'#ff1744'};
-    return {label:'HAZARDOUS', color:'#ff1744'};
-  }
-  function pollenInfo(v){
-    if(v<=10) return {label:'LOW', color:'#76ff03'};
-    if(v<=30) return {label:'MODERATE', color:'#ff6d00'};
-    if(v<=50) return {label:'HIGH', color:'#ff6d00'};
-    return {label:'VERY HIGH', color:'#ff1744'};
-  }
+function startGPS(){if(!navigator.geolocation){setGPS('UNAVAILABLE','denied');return;}if(navigator.permissions){navigator.permissions.query({name:'geolocation'}).then(function(s){if(s.state==='denied')setGPS('DENIED','denied');else doWatch();s.onchange=function(){if(s.state==='granted'&&!geoWatchId)doWatch();if(s.state==='denied'){clearGPSRetry();setGPS('DENIED','denied');}};}).catch(doWatch);}else doWatch();}
+function clearGPSRetry(){clearTimeout(gpsRetryTimer);if(geoWatchId!=null){try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}geoWatchId=null;}}
+function haversineM(lat1,lon1,lat2,lon2){var R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
 
-  const env = {
-    lat: null, lon: null,
-    tempC: null, cond: '--', wind: null, hum: null,
-    sunrise: null, sunset: null,
-    aqi: null, aqiLabel: null, aqiColor: null,
-    pollenTop: null, pollenType: null, pollenColor: null,
-    lastWeatherAt: 0, lastAirAt: 0,
-    okWeather: false, okAir: false,
-  };
+function doWatch(){
+  if(geoWatchId!=null)return;gpsAttempts++;setGPS('ACQUIRING','acquiring');
+  geoWatchId=navigator.geolocation.watchPosition(function(pos){
+    gpsAttempts=0;clearTimeout(gpsRetryTimer);
+    var newLat=pos.coords.latitude,newLon=pos.coords.longitude;
+    var moved=lat==null||Math.abs(newLat-lat)>0.0005||Math.abs(newLon-lon)>0.0005;
+    var now=Date.now();
+    if(pos.coords.speed!=null&&pos.coords.speed>=0){speedRaw=pos.coords.speed*3.6;}
+    else if(lastSpeedLat!=null&&lastSpeedTime!=null){var dt=(now-lastSpeedTime)/1000;if(dt>0.5){speedRaw=(haversineM(lastSpeedLat,lastSpeedLon,newLat,newLon)/dt)*3.6;}}
+    speedSamples.push(speedRaw);if(speedSamples.length>SPEED_SAMPLE_SIZE)speedSamples.shift();
+    speedKmh=speedSamples.reduce(function(a,b){return a+b;},0)/speedSamples.length;
+    if(speedKmh<0.5)speedKmh=0;
+    if(lastSpeedLat!=null){var segDist=haversineM(lastSpeedLat,lastSpeedLon,newLat,newLon);if(segDist>2)totalDistMeters+=segDist;}
 
-  async function fetchEnv(lat, lon){
-    // Weather (10 min) + Air (30 min), like your old HUD
-    const now = Date.now();
-    const doWeather = (now - env.lastWeatherAt) > 10*60*1000 || !env.okWeather;
-    const doAir = (now - env.lastAirAt) > 30*60*1000 || !env.okAir;
-
-    if (doWeather){
-      try{
-        const url = 'https://api.open-meteo.com/v1/forecast'
-          + '?latitude=' + encodeURIComponent(lat)
-          + '&longitude=' + encodeURIComponent(lon)
-          + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code'
-          + '&daily=sunrise,sunset'
-          + '&timezone=auto&forecast_days=1';
-        const r = await fetch(url);
-        const d = await r.json();
-        const c = d.current || {};
-        const dd = d.daily || {};
-        env.tempC = (c.temperature_2m != null) ? Math.round(c.temperature_2m) : env.tempC;
-        env.cond = (c.weather_code != null) ? wCode(c.weather_code) : env.cond;
-        env.wind = (c.wind_speed_10m != null) ? Math.round(c.wind_speed_10m) : env.wind;
-        env.hum  = (c.relative_humidity_2m != null) ? Math.round(c.relative_humidity_2m) : env.hum;
-        if (dd.sunrise && dd.sunrise[0]) env.sunrise = dd.sunrise[0].split('T')[1].slice(0,5);
-        if (dd.sunset && dd.sunset[0])   env.sunset  = dd.sunset[0].split('T')[1].slice(0,5);
-        env.okWeather = true;
-        env.lastWeatherAt = now;
-      } catch(e){
-        env.okWeather = false;
-      }
-    }
-
-    if (doAir){
-      try{
-        const url = 'https://air-quality-api.open-meteo.com/v1/air-quality'
-          + '?latitude=' + encodeURIComponent(lat)
-          + '&longitude=' + encodeURIComponent(lon)
-          + '&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen';
-        const r = await fetch(url);
-        const d = await r.json();
-        const c = d.current || {};
-        const aqi = (c.european_aqi != null) ? c.european_aqi : c.us_aqi;
-        if (aqi != null){
-          const ai = aqiInfo(aqi);
-          env.aqi = Math.round(aqi);
-          env.aqiLabel = ai.label;
-          env.aqiColor = ai.color;
+    /* GPS BEARING FALLBACK — Quest 3 has no magnetometer */
+    if(lastBearingLat!=null){
+      var bearDist=haversineM(lastBearingLat,lastBearingLon,newLat,newLon);
+      if(bearDist>5){
+        var bear=gpsBearing(lastBearingLat,lastBearingLon,newLat,newLon);
+        if(headingSource!=='compass'){
+          headingSource='gps';
+          mapHeadingTarget=bear;
+          if(mapHeadingRaw===null)mapHeadingRaw=bear;
         }
-        const pvs = [
-          {n:'GRASS', v:c.grass_pollen},
-          {n:'BIRCH', v:c.birch_pollen},
-          {n:'MUGWORT', v:c.mugwort_pollen}
-        ].filter(x => x.v != null);
-
-        if (pvs.length){
-          const top = pvs.reduce((a,b)=> (a.v>b.v?a:b));
-          const pi = pollenInfo(top.v);
-          env.pollenTop = pi.label;
-          env.pollenType = top.n;
-          env.pollenColor = pi.color;
-        }
-        env.okAir = true;
-        env.lastAirAt = now;
-      } catch(e){
-        env.okAir = false;
+        lastBearingLat=newLat;lastBearingLon=newLon;
       }
+    }else{lastBearingLat=newLat;lastBearingLon=newLon;}
+
+    lastSpeedLat=newLat;lastSpeedLon=newLon;lastSpeedTime=now;
+    if(breadcrumbs.length===0||haversineM(breadcrumbs[breadcrumbs.length-1].lat,breadcrumbs[breadcrumbs.length-1].lon,newLat,newLon)>3){breadcrumbs.push({lat:newLat,lon:newLon});if(breadcrumbs.length>BREADCRUMB_MAX)breadcrumbs.shift();}
+    document.getElementById('spdVal').textContent=speedKmh.toFixed(1);
+    document.getElementById('odoVal').textContent=(totalDistMeters>=1000?(totalDistMeters/1000).toFixed(3)+' km':Math.round(totalDistMeters)+' m');
+    lat=newLat;lon=newLon;
+    document.getElementById('latV').textContent=lat.toFixed(5)+'°';document.getElementById('lonV').textContent=lon.toFixed(5)+'°';
+    setGPS('LOCKED','locked');fetchWeather();
+    if(moved){reverseGeocode();fetchPOIs();preloadMapTiles();}
+  },function(e){try{navigator.geolocation.clearWatch(geoWatchId);}catch(_){}geoWatchId=null;if(e.code===1){setGPS('DENIED','denied');return;}if(gpsAttempts>=GPS_MAX_ATTEMPTS){setGPS('FAILED','denied');addAlert('GPS FAILED','warn');return;}var codes={1:'DENIED',2:'UNAVAILABLE',3:'TIMEOUT'};setGPS((codes[e.code]||'ERROR')+' RETRY '+gpsAttempts+'/'+GPS_MAX_ATTEMPTS,'acquiring');gpsRetryTimer=setTimeout(doWatch,GPS_RETRY_DELAY);},{enableHighAccuracy:true,maximumAge:0,timeout:GPS_TIMEOUT});
+}
+function setGPS(msg,cls){var el=document.getElementById('gpsS');el.textContent='● GPS '+msg;el.className='gps-status '+cls;if(cls==='locked'&&lastGpsState!=='locked'){lastGpsState='locked';fireGPSLockPulse();if(!threatFetched){threatFetched=true;setTimeout(fetchThreat,1500);}}else if(cls!=='locked'){lastGpsState=cls;}}
+
+/* HEADING — compass when available, GPS bearing fallback for Quest 3 */
+function startHeading(){
+  if('ondeviceorientationabsolute' in window){
+    window.addEventListener('deviceorientationabsolute',function(e){
+      if(e.alpha!=null){
+        headingSource='compass';
+        mapHeadingTarget=(e.alpha%360+360)%360;
+        mapHeadingRaw=mapHeadingTarget;
+      }
+      capturePitchRoll(e);
+    },true);
+  }
+  window.addEventListener('deviceorientation',function(e){
+    if(e.webkitCompassHeading!=null){
+      headingSource='compass';
+      mapHeadingTarget=e.webkitCompassHeading;
+      mapHeadingRaw=mapHeadingTarget;
     }
-  }
+    capturePitchRoll(e);
+  },true);
+}
+function capturePitchRoll(e){
+  if(e.beta!=null)  ahPitch=clamp(e.beta,-90,90);
+  if(e.gamma!=null) ahRoll =clamp(e.gamma,-90,90);
+}
 
-  // GPS watch for env fetch
-  let geoWatch = null;
-  function startGeo(){
-    if (!('geolocation' in navigator)) return;
-    try{
-      geoWatch = navigator.geolocation.watchPosition(
-        (pos) => {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          if (env.lat == null || env.lon == null){
-            env.lat = lat; env.lon = lon;
-            fetchEnv(lat, lon);
-            return;
-          }
-          // refresh on move > ~250m
-          const dLat = (lat - env.lat);
-          const dLon = (lon - env.lon);
-          const approxMeters = Math.sqrt(dLat*dLat + dLon*dLon) * 111000;
-          if (approxMeters > 250){
-            env.lat = lat; env.lon = lon;
-            fetchEnv(lat, lon);
-          }
-        },
-        () => {},
-        { enableHighAccuracy:true, maximumAge:0, timeout:8000 }
-      );
-    } catch(e){}
-  }
+var geocodeTimer=null;
+function reverseGeocode(){clearTimeout(geocodeTimer);geocodeTimer=setTimeout(function(){fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json&zoom=16',{headers:{'Accept-Language':'en'}}).then(function(r){return r.json();}).then(function(d){var addr=d.address||{};var street=(addr.road||addr.pedestrian||addr.path||addr.footway||'').toUpperCase();if(street!==lastStreet){lastStreet=street;document.getElementById('street').textContent=street;}var area=addr.neighbourhood||addr.suburb||addr.city_district||addr.village||addr.town||addr.city||addr.county||addr.state||'';var city=addr.city||addr.town||addr.village||'';var label=(area&&city&&area!==city?area+', '+city:area||city||d.display_name.split(',')[0]).toUpperCase();if(label&&label!==lastArea){lastArea=label;var el=document.getElementById('area');el.classList.remove('updating');void el.offsetWidth;el.textContent=label;el.classList.add('updating');addAlert('LOCATION UPDATED','info');}}).catch(function(){});},3000);}
 
-  // ---------- WebGL setup ----------
-  const gl = canvas.getContext('webgl2', {
-    alpha: true,
-    depth: true,
-    antialias: true,
-    premultipliedAlpha: false,
-    preserveDrawingBuffer: false
+var poiTimer=null;
+function fetchPOIs(){if(lat==null)return;clearTimeout(poiTimer);poiTimer=setTimeout(function(){var q='[out:json][timeout:10];(node["amenity"~"cafe|restaurant|hospital|pharmacy|atm"](around:500,'+lat+','+lon+');node["public_transport"="stop_position"](around:500,'+lat+','+lon+'););out body 12;';fetch('https://overpass-api.de/api/interpreter',{method:'POST',body:q}).then(function(r){return r.json();}).then(function(d){var items=(d.elements||[]).map(function(el){var dlat=el.lat-lat,dlon=el.lon-lon;var dist=Math.round(Math.sqrt(dlat*dlat+dlon*dlon)*111320);var bear=Math.round((Math.atan2(dlon,dlat)*180/Math.PI+360)%360);var name=(el.tags&&(el.tags.name||el.tags.amenity||el.tags.public_transport)||'POI').toUpperCase().substring(0,22);return{name:name,dist:dist,bear:bear,lat:el.lat,lon:el.lon};}).filter(function(x){return x.dist>5;}).sort(function(a,b){return a.dist-b.dist;}).slice(0,6);poiData=items;renderPOIs(items);}).catch(function(){});},2000);}
+function renderPOIs(items){var panel=document.getElementById('poiPanel');panel.innerHTML='';if(!items.length)return;var hdr=document.createElement('div');hdr.className='poi-hdr';hdr.textContent='NEARBY';panel.appendChild(hdr);items.forEach(function(item){var row=document.createElement('div');row.className='poi-row';row.innerHTML='<span class="poi-dist">'+fmtDist(item.dist)+'</span><span style="opacity:.5">'+b2arrow(item.bear)+'</span> <span>'+item.name+'</span>';panel.appendChild(row);});}
+function fmtDist(m){return m<1000?m+'m':(m/1000).toFixed(1)+'km';}
+function b2arrow(absoluteBear){
+  var hdg=mapHeading||0;
+  var rel=((absoluteBear-hdg)+360)%360;
+  return['↑','↗','→','↘','↓','↙','←','↖'][Math.round(rel/45)%8];
+}
+
+async function requestPerms(){document.getElementById('permBtn').style.display='none';if(typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission)try{await DeviceOrientationEvent.requestPermission();}catch(e){}if(typeof DeviceMotionEvent!=='undefined'&&DeviceMotionEvent.requestPermission)try{await DeviceMotionEvent.requestPermission();}catch(e){}if(!geoWatchId)doWatch();}
+
+function fetchWeather(){if(weatherFetched||lat==null)return;weatherFetched=true;fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+'&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&daily=sunrise,sunset&timezone=auto&forecast_days=1').then(function(r){return r.json();}).then(function(d){var c=d.current,dd=d.daily;setVal('wTemp',Math.round(c.temperature_2m)+'°C');setVal('wCond',wCode(c.weather_code));setVal('wWind',Math.round(c.wind_speed_10m));setVal('wHum',Math.round(c.relative_humidity_2m)+'%');if(dd)document.getElementById('wSun').textContent='↑ '+dd.sunrise[0].split('T')[1]+' · ↓ '+dd.sunset[0].split('T')[1];addAlert('WEATHER OK','ok');}).catch(function(){});fetch('https://air-quality-api.open-meteo.com/v1/air-quality?latitude='+lat+'&longitude='+lon+'&current=european_aqi,us_aqi,grass_pollen,birch_pollen,mugwort_pollen').then(function(r){return r.json();}).then(function(d){var c=d.current;var aqi=c.european_aqi!=null?c.european_aqi:c.us_aqi;if(aqi!=null){var ai=aqiInfo(aqi);lastAqi=aqi;var ae=document.getElementById('wAqi');ae.textContent=Math.round(aqi);ae.style.color=ai.color;document.getElementById('wAqiLbl').textContent=ai.label;document.getElementById('wAqiLbl').style.color=ai.color;document.getElementById('aqiRow').style.display='flex';document.getElementById('envDivider').style.display='block';flashEl(ae);}var pvs=[{n:'GRASS',v:c.grass_pollen},{n:'BIRCH',v:c.birch_pollen},{n:'MUGWORT',v:c.mugwort_pollen}].filter(function(x){return x.v!=null;});if(pvs.length){var top=pvs.reduce(function(a,b){return a.v>b.v?a:b;});var pi=pollenInfo(top.v);lastPollen=top.v;var pe=document.getElementById('wPollen');pe.textContent=pi.label;pe.style.color=pi.color;document.getElementById('wPollenLbl').textContent=top.n;document.getElementById('pollenRow').style.display='flex';document.getElementById('envDivider').style.display='block';if(pi.label==='HIGH'||pi.label==='VERY HIGH')addAlert('HIGH POLLEN: '+top.n,'warn');}}).catch(function(){});}
+function aqiInfo(v){if(v<=20)return{label:'GOOD',color:'#76ff03'};if(v<=40)return{label:'FAIR',color:'#76ff03'};if(v<=60)return{label:'MODERATE',color:'#ff6d00'};if(v<=80)return{label:'POOR',color:'#ff6d00'};if(v<=100)return{label:'VERY POOR',color:'#ff1744'};return{label:'HAZARDOUS',color:'#ff1744'};}
+function pollenInfo(v){if(v<=10)return{label:'LOW',color:'#76ff03'};if(v<=30)return{label:'MODERATE',color:'#ff6d00'};if(v<=50)return{label:'HIGH',color:'#ff6d00'};return{label:'VERY HIGH',color:'#ff1744'};}
+function wCode(c){if(c===0)return'CLEAR';if(c<=2)return'PARTLY CLOUDY';if(c<=3)return'OVERCAST';if(c<=49)return'FOG';if(c<=59)return'DRIZZLE';if(c<=69)return'RAIN';if(c<=79)return'SNOW';if(c<=82)return'SHOWERS';if(c<=99)return'STORM';return'--';}
+
+function startScanLines(){var cvs=document.getElementById('scanLines');if(!cvs)return;var ctx=cvs.getContext('2d');var sweepY=0,sweepSpeed=1.2;function frame(){requestAnimationFrame(frame);var W=window.innerWidth,H=window.innerHeight;if(cvs.width!==W||cvs.height!==H){cvs.width=W;cvs.height=H;}ctx.clearRect(0,0,W,H);var C=TC();ctx.strokeStyle=C;for(var y=0;y<H;y+=4){ctx.globalAlpha=0.028;ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}sweepY+=sweepSpeed;if(sweepY>H+60)sweepY=-60;var grad=ctx.createLinearGradient(0,sweepY-30,0,sweepY+30);grad.addColorStop(0,'transparent');grad.addColorStop(0.5,C);grad.addColorStop(1,'transparent');ctx.strokeStyle=grad;ctx.globalAlpha=0.07;ctx.lineWidth=2.6;ctx.beginPath();ctx.moveTo(0,sweepY);ctx.lineTo(W,sweepY);ctx.stroke();ctx.globalAlpha=1;ctx.lineWidth=1;}frame();}
+
+function themeSweep(){var el=document.getElementById('themeSweep');if(el){el.classList.remove('sweeping');void el.offsetWidth;el.classList.add('sweeping');}c2dThemeSweepX=0;c2dThemeSweeping=true;}
+function fireGPSLockPulse(){var wrap=document.getElementById('gpsRipple');if(!wrap)return;wrap.innerHTML='';for(var i=0;i<3;i++){(function(delay){setTimeout(function(){var ring=document.createElement('div');ring.className='ripple-ring';wrap.appendChild(ring);setTimeout(function(){ring.remove();},900);},delay);})(i*220);}addAlert('GPS LOCKED','ok');}
+
+function lon2tileF(lo,z){return(lo+180)/360*Math.pow(2,z);}
+function lat2tileF(la,z){return(1-Math.log(Math.tan(la*Math.PI/180)+1/Math.cos(la*Math.PI/180))/Math.PI)/2*Math.pow(2,z);}
+function loadTile(tx,ty,z){var key=z+'/'+tx+'/'+ty;if(mapTileCache[key])return mapTileCache[key];var entry={img:new Image(),loaded:false,error:false};entry.img.crossOrigin='anonymous';entry.img.onload=function(){entry.loaded=true;};entry.img.onerror=function(){entry.error=true;};entry.img.src='https://tile.openstreetmap.org/'+z+'/'+tx+'/'+ty+'.png';mapTileCache[key]=entry;return entry;}
+function preloadMapTiles(){if(lat==null)return;var cx=Math.floor(lon2tileF(lon,MAP_ZOOM)),cy=Math.floor(lat2tileF(lat,MAP_ZOOM));if(cx===lastTileCenterX&&cy===lastTileCenterY)return;lastTileCenterX=cx;lastTileCenterY=cy;for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++)loadTile(cx+dx,cy+dy,MAP_ZOOM);}
+function latlon2px(pLat,pLon,pxPerMeter){var dlat=pLat-lat,dlon=pLon-lon;return{x:dlon*111320*Math.cos(lat*Math.PI/180)*pxPerMeter,y:-dlat*111320*pxPerMeter};}
+
+function drawMinimap(ctx,cx,cy,R){
+  var hdg=mapHeading!=null?mapHeading:0;
+  if(lat==null&&mapHeadingRaw==null){
+    ctx.save();ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.clip();
+    ctx.fillStyle='rgba(0,0,0,.88)';ctx.fill();ctx.restore();
+    ctx.strokeStyle=TC();ctx.lineWidth=1.5;ctx.globalAlpha=0.3;ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle=TC();ctx.globalAlpha=0.4;ctx.font='900 9px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('NO SIGNAL',cx,cy);ctx.textAlign='start';ctx.textBaseline='alphabetic';ctx.globalAlpha=1;return;
+  }
+  var C=TC(),C3=TC3();var headRad=hdg*Math.PI/180;
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.clip();
+  ctx.fillStyle='rgba(0,0,0,.92)';ctx.fillRect(cx-R-1,cy-R-1,R*2+2,R*2+2);
+  if(lat!=null){
+    var tileXf=lon2tileF(lon,MAP_ZOOM),tileYf=lat2tileF(lat,MAP_ZOOM);var tileXi=Math.floor(tileXf),tileYi=Math.floor(tileYf);var fracX=tileXf-tileXi,fracY=tileYf-tileYi;var mpp=156543.03392*Math.cos(lat*Math.PI/180)/Math.pow(2,MAP_ZOOM);var scale=mpp/(MM_RANGE_METERS/R);var tileDisplaySize=256*scale;var pxPerMeter=R/MM_RANGE_METERS;
+    ctx.save();ctx.translate(cx,cy);ctx.rotate(-headRad);
+    ctx.globalAlpha=0.38;for(var dy=-2;dy<=2;dy++)for(var dx=-2;dx<=2;dx++){var tile=loadTile(tileXi+dx,tileYi+dy,MAP_ZOOM);if(tile&&tile.loaded){var px=(dx-fracX)*tileDisplaySize,py=(dy-fracY)*tileDisplaySize;ctx.drawImage(tile.img,px-tileDisplaySize/2,py-tileDisplaySize/2,tileDisplaySize,tileDisplaySize);}}
+    ctx.globalAlpha=1;ctx.globalAlpha=0.06;ctx.fillStyle=C;ctx.fillRect(-R*2,-R*2,R*4,R*4);ctx.globalAlpha=1;
+    if(breadcrumbs.length>1){ctx.beginPath();ctx.strokeStyle=C3;ctx.lineWidth=2;ctx.globalAlpha=0.55;ctx.lineCap='round';ctx.lineJoin='round';for(var bi=0;bi<breadcrumbs.length;bi++){var bp=latlon2px(breadcrumbs[bi].lat,breadcrumbs[bi].lon,pxPerMeter);if(bi===0)ctx.moveTo(bp.x,bp.y);else ctx.lineTo(bp.x,bp.y);}ctx.stroke();ctx.strokeStyle=C3;ctx.lineWidth=5;ctx.globalAlpha=0.08;ctx.stroke();ctx.globalAlpha=1;}
+    poiData.forEach(function(poi){var pp=latlon2px(poi.lat,poi.lon,pxPerMeter);var d=Math.sqrt(pp.x*pp.x+pp.y*pp.y);if(d>R*0.92)return;ctx.fillStyle=C;ctx.globalAlpha=0.25;ctx.beginPath();ctx.arc(pp.x,pp.y,5,0,Math.PI*2);ctx.fill();ctx.fillStyle=C;ctx.globalAlpha=0.95;ctx.beginPath();ctx.arc(pp.x,pp.y,2.5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;});
+    ctx.restore();
+  }
+  ctx.strokeStyle=C;ctx.lineWidth=0.6;[0.33,0.66,1.0].forEach(function(f){ctx.globalAlpha=0.08;ctx.beginPath();ctx.arc(cx,cy,R*f,0,Math.PI*2);ctx.stroke();});ctx.globalAlpha=1;
+  ctx.strokeStyle=C;ctx.lineWidth=0.5;ctx.globalAlpha=0.12;ctx.beginPath();ctx.moveTo(cx-R,cy);ctx.lineTo(cx+R,cy);ctx.stroke();ctx.beginPath();ctx.moveTo(cx,cy-R);ctx.lineTo(cx,cy+R);ctx.stroke();ctx.globalAlpha=1;
+  ctx.fillStyle='#fff';ctx.globalAlpha=0.9;ctx.beginPath();ctx.arc(cx,cy,3.5,0,Math.PI*2);ctx.fill();ctx.fillStyle=C;ctx.globalAlpha=1;ctx.beginPath();ctx.arc(cx,cy,2,0,Math.PI*2);ctx.fill();
+  ctx.save();ctx.globalAlpha=0.06;ctx.fillStyle=C;ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,R*0.85,-Math.PI/2-Math.PI/8,-Math.PI/2+Math.PI/8);ctx.closePath();ctx.fill();ctx.restore();
+  ctx.restore();
+  ctx.strokeStyle=C;ctx.lineWidth=1.5;ctx.globalAlpha=0.45;ctx.beginPath();ctx.arc(cx,cy,R,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;
+  ctx.strokeStyle=C;ctx.lineWidth=0.5;ctx.globalAlpha=0.15;ctx.beginPath();ctx.arc(cx,cy,R-3,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;
+  var cardinals=[{label:'N',angle:0,col:C3},{label:'E',angle:90,col:C},{label:'S',angle:180,col:C},{label:'W',angle:270,col:C}];
+  ctx.font='900 8px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  cardinals.forEach(function(cd){var a=(cd.angle-hdg)*Math.PI/180,r=R-10;ctx.fillStyle=cd.col;ctx.globalAlpha=cd.label==='N'?1:0.45;ctx.fillText(cd.label,cx+Math.sin(a)*r,cy-Math.cos(a)*r);});
+  ctx.globalAlpha=1;ctx.textAlign='start';ctx.textBaseline='alphabetic';
+  ctx.strokeStyle=C;ctx.lineWidth=1;for(var deg=0;deg<360;deg+=30){var a2=(deg-hdg)*Math.PI/180,isMajor=deg%90===0,r1=R-(isMajor?7:4),r2=R;ctx.globalAlpha=isMajor?0.5:0.18;ctx.beginPath();ctx.moveTo(cx+Math.sin(a2)*r1,cy-Math.cos(a2)*r1);ctx.lineTo(cx+Math.sin(a2)*r2,cy-Math.cos(a2)*r2);ctx.stroke();}ctx.globalAlpha=1;
+  ctx.fillStyle=C;ctx.globalAlpha=0.95;ctx.beginPath();ctx.moveTo(cx,cy-R-7);ctx.lineTo(cx-5,cy-R+1);ctx.lineTo(cx+5,cy-R+1);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+  ctx.fillStyle=C;ctx.globalAlpha=0.3;ctx.font='700 7px "Share Tech Mono",monospace';ctx.textAlign='center';ctx.fillText(MM_RANGE_METERS+'m',cx,cy+R-5);ctx.textAlign='start';ctx.globalAlpha=1;
+}
+
+function drawEdgeArrows(ctx,w,h){
+  if(!poiData.length||lat==null)return;
+  var C=TC(),margin=28,FOV_HALF=45;
+  ctx.save();var slots=[];
+  poiData.forEach(function(poi){
+    var hdg=mapHeading||0;var bd=((poi.bear-hdg+540)%360)-180;
+    if(Math.abs(bd)<FOV_HALF)return;
+    var ex,ey,chevRot,labelAlign;
+    if(bd>0){ex=w-margin;ey=h*0.2+(bd-FOV_HALF)/(180-FOV_HALF)*(h*0.6);chevRot=Math.PI/2;labelAlign='right';}
+    else{ex=margin;ey=h*0.2+(-bd-FOV_HALF)/(180-FOV_HALF)*(h*0.6);chevRot=-Math.PI/2;labelAlign='left';}
+    ey=Math.max(50,Math.min(h-50,ey));
+    for(var si=0;si<slots.length;si++){if(Math.abs(slots[si].y-ey)<22&&slots[si].side===(bd>0?1:-1))ey+=22;}
+    slots.push({y:ey,side:bd>0?1:-1});
+    ctx.save();ctx.translate(ex,ey);ctx.rotate(chevRot);
+    ctx.strokeStyle=C;ctx.lineWidth=2;ctx.globalAlpha=0.65;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(-5,-6);ctx.lineTo(1,0);ctx.lineTo(-5,6);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-1,-6);ctx.lineTo(5,0);ctx.lineTo(-1,6);ctx.stroke();
+    ctx.restore();
+    var lx=bd>0?ex-16:ex+16;
+    ctx.fillStyle=C;ctx.globalAlpha=0.7;ctx.font='900 8px Orbitron,monospace';
+    ctx.textAlign=labelAlign;ctx.textBaseline='middle';
+    ctx.fillText(fmtDist(poi.dist),lx,ey-6);
+    ctx.globalAlpha=0.4;ctx.font='700 7px "Share Tech Mono",monospace';
+    ctx.fillText(poi.name.substring(0,14),lx,ey+6);
   });
+  ctx.textAlign='start';ctx.textBaseline='alphabetic';ctx.globalAlpha=1;ctx.restore();
+}
 
-  if (!gl){
-    alert('WebGL2 not available.');
-    return;
+function drawCompassTape(ctx,x,y,w,h){
+  var C=TC(),C3=TC3();ctx.save();
+  ctx.fillStyle='rgba(0,0,0,.65)';var r=3;ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();ctx.fill();
+  ctx.strokeStyle=C;ctx.lineWidth=1;ctx.globalAlpha=0.2;ctx.stroke();ctx.globalAlpha=1;
+  if(mapHeadingRaw===null){
+    ctx.fillStyle=C;ctx.globalAlpha=0.35;ctx.font='900 9px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('HDG ---\u00B0  ACQUIRING',x+w/2,y+h/2);ctx.textAlign='start';ctx.textBaseline='alphabetic';ctx.globalAlpha=1;ctx.restore();return;
   }
-
-  function compile(type, src){
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
-      const msg = gl.getShaderInfoLog(s);
-      gl.deleteShader(s);
-      throw new Error(msg);
-    }
-    return s;
+  ctx.save();ctx.beginPath();ctx.rect(x+1,y+1,w-2,h-2);ctx.clip();
+  var centerX=x+w/2,pxPerDeg=w/90,hdg=mapHeading;
+  var CARD={0:'N',45:'NE',90:'E',135:'SE',180:'S',225:'SW',270:'W',315:'NW'};
+  for(var d=-180;d<=540;d+=5){var offset=(d-hdg)*pxPerDeg;if(offset<-w)offset+=360*pxPerDeg;if(offset>w)offset-=360*pxPerDeg;var px=centerX+offset;if(px<x-10||px>x+w+10)continue;var dNorm=((d%360)+360)%360;var isMajor=d%10===0;var isCard=CARD[dNorm]!==undefined;var tickH=isCard?h*0.45:isMajor?h*0.3:h*0.15;
+    ctx.strokeStyle=C;ctx.lineWidth=isCard?1.5:0.8;ctx.globalAlpha=isCard?0.8:isMajor?0.35:0.12;ctx.beginPath();ctx.moveTo(px,y+h);ctx.lineTo(px,y+h-tickH);ctx.stroke();
+    if(isCard){ctx.fillStyle=dNorm===0?C3:C;ctx.globalAlpha=dNorm===0?1:0.65;ctx.font='900 '+(dNorm%90===0?'9':'7')+'px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(CARD[dNorm],px,y+2);}
+    else if(isMajor){ctx.fillStyle=C;ctx.globalAlpha=0.25;ctx.font='700 6px "Share Tech Mono",monospace';ctx.textAlign='center';ctx.textBaseline='top';ctx.fillText(('00'+dNorm).slice(-3),px,y+3);}
   }
-  function link(vs, fs){
-    const p = gl.createProgram();
-    gl.attachShader(p, vs);
-    gl.attachShader(p, fs);
-    gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)){
-      const msg = gl.getProgramInfoLog(p);
-      gl.deleteProgram(p);
-      throw new Error(msg);
+  ctx.globalAlpha=1;ctx.restore();
+  ctx.fillStyle=C;ctx.globalAlpha=0.95;ctx.beginPath();ctx.moveTo(centerX,y+h+1);ctx.lineTo(centerX-4,y+h+7);ctx.lineTo(centerX+4,y+h+7);ctx.closePath();ctx.fill();
+  var hdgStr=('00'+Math.round(hdg)).slice(-3)+'\u00B0';ctx.font='900 9px Orbitron,monospace';ctx.textAlign='center';var tw=ctx.measureText(hdgStr).width+10;ctx.fillStyle='rgba(0,0,0,.8)';ctx.fillRect(centerX-tw/2,y+h+6,tw,14);ctx.strokeStyle=C;ctx.lineWidth=0.8;ctx.globalAlpha=0.4;ctx.strokeRect(centerX-tw/2,y+h+6,tw,14);ctx.globalAlpha=1;ctx.fillStyle=C;ctx.fillText(hdgStr,centerX,y+h+16);ctx.textAlign='start';ctx.textBaseline='alphabetic';
+  if(headingSource){ctx.fillStyle=headingSource==='compass'?C3:'#ff6d00';ctx.globalAlpha=0.5;ctx.font='700 6px "Share Tech Mono",monospace';ctx.textAlign='center';ctx.fillText(headingSource==='compass'?'MAG':'GPS',centerX,y-3);ctx.textAlign='start';ctx.globalAlpha=1;}
+  var fadeW=30;var lg=ctx.createLinearGradient(x,0,x+fadeW,0);lg.addColorStop(0,'rgba(0,0,0,.9)');lg.addColorStop(1,'transparent');ctx.fillStyle=lg;ctx.fillRect(x,y,fadeW,h);var rg=ctx.createLinearGradient(x+w-fadeW,0,x+w,0);rg.addColorStop(0,'transparent');rg.addColorStop(1,'rgba(0,0,0,.9)');ctx.fillStyle=rg;ctx.fillRect(x+w-fadeW,y,fadeW,h);
+  ctx.restore();
+}
+
+/* ARTIFICIAL HORIZON — crosshair counter-rotated to stay GRAVITY-LEVEL on head-mounted display */
+function drawArtificialHorizon(ctx,cx,cy,w,h){
+  var C=TC(),C3=TC3();var hw=w/2,hh=h/2;var pitch=ahPitch,roll=ahRoll,pxPerDeg=h/60;
+  ctx.save();var r=6;
+  ctx.beginPath();ctx.moveTo(cx-hw+r,cy-hh);ctx.lineTo(cx+hw-r,cy-hh);ctx.arcTo(cx+hw,cy-hh,cx+hw,cy-hh+r,r);ctx.lineTo(cx+hw,cy+hh-r);ctx.arcTo(cx+hw,cy+hh,cx+hw-r,cy+hh,r);ctx.lineTo(cx-hw+r,cy+hh);ctx.arcTo(cx-hw,cy+hh,cx-hw,cy+hh-r,r);ctx.lineTo(cx-hw,cy-hh+r);ctx.arcTo(cx-hw,cy-hh,cx-hw+r,cy-hh,r);ctx.closePath();ctx.clip();
+
+  /* Sky/ground + pitch ladder rotate with the world */
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(-roll*Math.PI/180);
+  var horizonY=pitch*pxPerDeg;
+  ctx.fillStyle='rgba(0,80,180,.12)';ctx.fillRect(-hw*2,horizonY-h*3,hw*4,h*3);
+  ctx.fillStyle='rgba(120,80,0,.12)';ctx.fillRect(-hw*2,horizonY,hw*4,h*3);
+  ctx.strokeStyle=C;ctx.lineWidth=1.5;ctx.globalAlpha=0.6;ctx.beginPath();ctx.moveTo(-hw*2,horizonY);ctx.lineTo(hw*2,horizonY);ctx.stroke();ctx.globalAlpha=1;
+  [-30,-20,-10,10,20,30].forEach(function(deg){
+    var py=horizonY-deg*pxPerDeg;var lineW=Math.abs(deg)===10?25:Math.abs(deg)===20?35:45;
+    ctx.strokeStyle=C;ctx.lineWidth=0.8;ctx.globalAlpha=0.3;
+    if(deg<0)ctx.setLineDash([3,3]);else ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(-lineW,py);ctx.lineTo(lineW,py);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=C;ctx.globalAlpha=0.25;ctx.font='700 6px "Share Tech Mono",monospace';ctx.textAlign='right';ctx.fillText(Math.abs(deg)+'\u00B0',-lineW-3,py+2);ctx.textAlign='left';ctx.fillText(Math.abs(deg)+'\u00B0',lineW+3,py+2);ctx.globalAlpha=1;
+  });
+  ctx.restore();
+
+  /* FIX: Crosshair COUNTER-ROTATED by +roll to stay gravity-level on Quest 3.
+     The HUD quad is head-locked, so without this the wings tilt with your head.
+     Rotating by +roll cancels the head tilt = wings stay horizontal. */
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate(roll*Math.PI/180);
+  ctx.strokeStyle=C;ctx.lineWidth=2;ctx.globalAlpha=0.8;
+  ctx.beginPath();ctx.moveTo(-40,0);ctx.lineTo(-14,0);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(14,0);ctx.lineTo(40,0);ctx.stroke();
+  ctx.beginPath();ctx.arc(0,0,3,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-40,0);ctx.lineTo(-40,6);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(40,0);ctx.lineTo(40,6);ctx.stroke();
+  ctx.globalAlpha=1;
+  ctx.restore();
+
+  /* Roll arc */
+  ctx.save();ctx.translate(cx,cy);var arcR=hh-8;
+  ctx.strokeStyle=C;ctx.lineWidth=0.6;ctx.globalAlpha=0.2;ctx.beginPath();ctx.arc(0,0,arcR,-Math.PI*0.8,-Math.PI*0.2);ctx.stroke();
+  [-60,-45,-30,-20,-10,0,10,20,30,45,60].forEach(function(rd){var a=(-90+rd)*Math.PI/180;var isBig=rd%30===0;var r1=arcR-(isBig?6:3),r2=arcR;ctx.globalAlpha=isBig?0.4:0.15;ctx.lineWidth=isBig?1:0.5;ctx.beginPath();ctx.moveTo(Math.cos(a)*r1,Math.sin(a)*r1);ctx.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);ctx.stroke();});
+  ctx.globalAlpha=0.8;var rpa=(-90-roll)*Math.PI/180,rpR=arcR+2;ctx.fillStyle=C;
+  ctx.beginPath();ctx.moveTo(Math.cos(rpa)*rpR,Math.sin(rpa)*rpR);ctx.lineTo(Math.cos(rpa-0.06)*(rpR+6),Math.sin(rpa-0.06)*(rpR+6));ctx.lineTo(Math.cos(rpa+0.06)*(rpR+6),Math.sin(rpa+0.06)*(rpR+6));ctx.closePath();ctx.fill();ctx.globalAlpha=1;ctx.restore();
+
+  ctx.strokeStyle=C;ctx.lineWidth=1;ctx.globalAlpha=0.2;
+  ctx.beginPath();ctx.moveTo(cx-hw+r,cy-hh);ctx.lineTo(cx+hw-r,cy-hh);ctx.arcTo(cx+hw,cy-hh,cx+hw,cy-hh+r,r);ctx.lineTo(cx+hw,cy+hh-r);ctx.arcTo(cx+hw,cy+hh,cx+hw-r,cy+hh,r);ctx.lineTo(cx-hw+r,cy+hh);ctx.arcTo(cx-hw,cy+hh,cx-hw,cy+hh-r,r);ctx.lineTo(cx-hw,cy-hh+r);ctx.arcTo(cx-hw,cy-hh,cx-hw+r,cy-hh,r);ctx.closePath();ctx.stroke();ctx.globalAlpha=1;
+
+  ctx.textAlign='start';ctx.textBaseline='alphabetic';ctx.fillStyle=C;ctx.globalAlpha=0.35;ctx.font='900 7px Orbitron,monospace';
+  ctx.fillText('P '+Math.round(pitch)+'\u00B0',cx-hw+5,cy+hh-4);ctx.textAlign='end';ctx.fillText('R '+Math.round(roll)+'\u00B0',cx+hw-5,cy+hh-4);ctx.textAlign='start';ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+function startDOMWidgets(){
+  mmDomCanvas=document.getElementById('minimapCanvas');mmDomCtx=mmDomCanvas.getContext('2d');
+  var compCanvas=document.getElementById('compassCanvas'),compCtx=compCanvas.getContext('2d');
+  var hrzCanvas=document.getElementById('horizonCanvas'),hrzCtx=hrzCanvas.getContext('2d');
+  var edgeCanvas=document.getElementById('edgeArrowCanvas'),edgeCtx=edgeCanvas.getContext('2d');
+  var headLbl=document.getElementById('mmHeadingLbl');
+  function frame(){requestAnimationFrame(frame);if(xrSession)return;
+    if(mapHeadingTarget!==null){
+      if(mapHeading===null)mapHeading=mapHeadingTarget;
+      var diff=mapHeadingTarget-mapHeading;
+      if(diff>180)diff-=360;if(diff<-180)diff+=360;
+      mapHeading=(mapHeading+diff*0.1+360)%360;
     }
-    return p;
-  }
+    mmDomCtx.clearRect(0,0,mmDomCanvas.width,mmDomCanvas.height);drawMinimap(mmDomCtx,mmDomCanvas.width/2,mmDomCanvas.height/2,MM_DOM_RADIUS);
+    if(mapHeadingRaw!==null)headLbl.textContent='HDG '+('00'+Math.round(mapHeading)).slice(-3)+'\u00B0';
+    else headLbl.textContent='HDG ---\u00B0';
+    compCtx.clearRect(0,0,compCanvas.width,compCanvas.height);drawCompassTape(compCtx,0,0,compCanvas.width,22);
+    hrzCtx.clearRect(0,0,hrzCanvas.width,hrzCanvas.height);drawArtificialHorizon(hrzCtx,hrzCanvas.width/2,hrzCanvas.height/2,hrzCanvas.width,hrzCanvas.height);
+    var ew=window.innerWidth,eh=window.innerHeight;if(edgeCanvas.width!==ew||edgeCanvas.height!==eh){edgeCanvas.width=ew;edgeCanvas.height=eh;}
+    edgeCtx.clearRect(0,0,ew,eh);drawEdgeArrows(edgeCtx,ew,eh);
+  }frame();
+}
 
-  const vs3d = compile(gl.VERTEX_SHADER, `#version 300 es
-    precision highp float;
-    layout(location=0) in vec3 aPos;
-    uniform mat4 uView;
-    uniform mat4 uProj;
-    void main(){
-      gl_Position = uProj * uView * vec4(aPos, 1.0);
-    }
-  `);
-  const fs3d = compile(gl.FRAGMENT_SHADER, `#version 300 es
-    precision highp float;
-    uniform vec4 uColor;
-    out vec4 outColor;
-    void main(){ outColor = uColor; }
-  `);
-  const prog3d = link(vs3d, fs3d);
-  const uView = gl.getUniformLocation(prog3d, 'uView');
-  const uProj = gl.getUniformLocation(prog3d, 'uProj');
-  const uColor = gl.getUniformLocation(prog3d, 'uColor');
+function fetchThreat(){if(lat==null)return;document.getElementById('threatPanel').style.display='block';document.getElementById('threatSub').textContent='SCANNING...';var score=0,factors=[],done=0,needed=2;function tryFinish(){done++;if(done<needed)return;score=Math.min(10,Math.max(1,Math.round(score)));var col=score<=3?'#76ff03':score<=5?'#ffb300':score<=7?'#ff6d00':'#ff1744';var label=score<=3?'LOW':score<=5?'MODERATE':score<=7?'HIGH':'CRITICAL';var tv=document.getElementById('threatVal'),tb=document.getElementById('threatBar');tv.textContent=label+' '+score+'/10';tv.style.color=col;tb.style.width=(score/10*100)+'%';tb.style.background=col;tb.style.boxShadow='0 0 6px '+col;document.getElementById('threatSub').textContent=factors.slice(0,3).join(' \u00B7 ');if(score>=7)addAlert('THREAT: '+label,'danger');else if(score>=5)addAlert('THREAT: '+label,'warn');}setTimeout(function(){var envScore=0,wc=document.getElementById('wCond').textContent;var envMap={'STORM':3,'SNOW':2,'SHOWERS':1.5,'RAIN':1,'DRIZZLE':0.5,'FOG':1};envScore+=(envMap[wc]||0);var aqiEl=document.getElementById('wAqi');if(aqiEl&&aqiEl.textContent!=='--'){var aqi=parseInt(aqiEl.textContent)||0;if(aqi>80)envScore+=2;else if(aqi>60)envScore+=1.5;else if(aqi>40)envScore+=0.5;}var hr=new Date().getHours();if(hr>=23||hr<5){envScore+=1.5;factors.push('NIGHT');}else if(hr<7||hr>=21){envScore+=0.5;}if(wc!=='--'&&wc!=='CLEAR'&&wc!=='PARTLY CLOUDY')factors.push('WX:'+wc);score+=envScore;tryFinish();},100);fetch('https://data.police.uk/api/crimes-street/all-crime?lat='+lat+'&lng='+lon).then(function(r){if(!r.ok)throw new Error('not uk');return r.json();}).then(function(crimes){var count=Array.isArray(crimes)?crimes.length:0;score+=Math.min(4,count/12);if(count>0)factors.push(count+' CRIMES/MI');if(count>30)factors.push('HIGH CRIME');else if(count>15)factors.push('MOD CRIME');tryFinish();}).catch(function(){score+=(poiData.length>4?0.5:0);factors.push('NO CRIME DATA');tryFinish();});}
 
-  // Fullscreen quad for HUD texture
-  const vsHud = compile(gl.VERTEX_SHADER, `#version 300 es
-    precision highp float;
-    layout(location=0) in vec2 aPos;
-    layout(location=1) in vec2 aUv;
-    out vec2 vUv;
-    void main(){
-      vUv = aUv;
-      gl_Position = vec4(aPos, 0.0, 1.0);
-    }
-  `);
-  const fsHud = compile(gl.FRAGMENT_SHADER, `#version 300 es
-    precision highp float;
-    in vec2 vUv;
-    uniform sampler2D uTex;
-    out vec4 outColor;
-    void main(){
-      outColor = texture(uTex, vUv);
-    }
-  `);
-  const progHud = link(vsHud, fsHud);
-  const uTex = gl.getUniformLocation(progHud, 'uTex');
+function addAlert(msg,type){alertsState.unshift({msg:msg,type:type});alertsState=alertsState.slice(0,4);var el=document.createElement('div');el.className='alert '+(type||'info');el.textContent=msg;document.getElementById('alerts').appendChild(el);setTimeout(function(){el.style.transition='opacity .3s';el.style.opacity='0';setTimeout(function(){el.remove();},300);},5000);}
 
-  // Geometry buffers
-  const vbo3d = gl.createBuffer();
-  const vao3d = gl.createVertexArray();
-  gl.bindVertexArray(vao3d);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo3d);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
-  gl.bindVertexArray(null);
+/* XR */
+var xrSession=null,xrRefSpace=null,xrLayer=null,gl=null;
+var prog=null,vbo=null,ibo=null,tex=null,lastUp=0,mirrorOn=false;
+var hudC=document.getElementById('hud2d');var hCtx=hudC.getContext('2d',{alpha:true});
+var mirC=document.getElementById('hudMirror');var mirCtx=mirC.getContext('2d');
 
-  const vaoHud = gl.createVertexArray();
-  const vboHud = gl.createBuffer();
-  gl.bindVertexArray(vaoHud);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vboHud);
-  // aPos (vec2) + aUv (vec2)
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 16, 0);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 16, 8);
-  // fullscreen quad (2 triangles)
-  const quad = new Float32Array([
-    -1,-1,  0,0,
-     1,-1,  1,0,
-    -1, 1,  0,1,
-    -1, 1,  0,1,
-     1,-1,  1,0,
-     1, 1,  1,1,
-  ]);
-  gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
-  gl.bindVertexArray(null);
+/* ZOOM BUTTONS on 2D canvas */
+function drawZoomButtons(ctx,canW,canH){
+  var C=TC();var bw=40,bh=28,gap=6;
+  var bx=canW-bw-18,by=canH/2-bh-gap/2;
+  ctx.save();
+  [{y:by,label:'+'},{y:by+bh+gap,label:'\u2212'}].forEach(function(btn){
+    ctx.fillStyle='rgba(0,0,0,.55)';ctx.fillRect(bx,btn.y,bw,bh);
+    ctx.strokeStyle=C;ctx.lineWidth=1;ctx.globalAlpha=0.4;ctx.strokeRect(bx,btn.y,bw,bh);ctx.globalAlpha=1;
+    ctx.fillStyle=C;ctx.globalAlpha=0.8;ctx.font='900 16px Orbitron,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(btn.label,bx+bw/2,btn.y+bh/2);
+  });
+  ctx.fillStyle=C;ctx.globalAlpha=0.45;ctx.font='900 8px Orbitron,monospace';
+  ctx.fillText(Math.round(hudZoom*100)+'%',bx+bw/2,by+bh*2+gap+12);
+  ctx.textAlign='start';ctx.textBaseline='alphabetic';ctx.globalAlpha=1;
+  ctx.restore();
+}
 
-  // HUD canvases/textures per-eye (for correct stereo projection of markers)
-  const hud = [
-    { canvas: document.createElement('canvas'), ctx: null, tex: null, w:0, h:0 },
-    { canvas: document.createElement('canvas'), ctx: null, tex: null, w:0, h:0 }
-  ];
-  for (const h of hud){
-    h.ctx = h.canvas.getContext('2d', { alpha: true, desynchronized: true });
-    h.tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, h.tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  }
-  gl.bindTexture(gl.TEXTURE_2D, null);
+function drawHud2D(){
+  var w=hudC.width,h=hudC.height;var ctx=hCtx;ctx.clearRect(0,0,w,h);
+  var C=TC(),C2=TC2(),C3=TC3(),CR=TCR();
+  function glow(c,b){ctx.shadowColor=c;ctx.shadowBlur=b;}function ng(){ctx.shadowBlur=0;ctx.shadowColor='transparent';}function ga(a){ctx.globalAlpha=a;}function ga1(){ctx.globalAlpha=1;}
+  ctx.save();ctx.strokeStyle=C;for(var sl=0;sl<h;sl+=4){ctx.globalAlpha=0.032;ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(0,sl);ctx.lineTo(w,sl);ctx.stroke();}c2dSweepY+=0.9;if(c2dSweepY>h+50)c2dSweepY=-50;var sg=ctx.createLinearGradient(0,c2dSweepY-25,0,c2dSweepY+25);sg.addColorStop(0,'transparent');sg.addColorStop(0.5,C);sg.addColorStop(1,'transparent');ctx.strokeStyle=sg;ctx.globalAlpha=0.09;ctx.lineWidth=2.6;ctx.beginPath();ctx.moveTo(0,c2dSweepY);ctx.lineTo(w,c2dSweepY);ctx.stroke();ga1();ctx.lineWidth=1;ctx.restore();
+  ctx.save();ctx.strokeStyle=C;ga(0.4);ctx.lineWidth=2;[[20,20,1,1],[w-20,20,-1,1],[20,h-20,1,-1],[w-20,h-20,-1,-1]].forEach(function(q){ctx.beginPath();ctx.moveTo(q[0],q[1]+q[3]*40);ctx.lineTo(q[0],q[1]);ctx.lineTo(q[0]+q[2]*40,q[1]);ctx.stroke();});ga1();ctx.restore();
+  var n=new Date(),ts=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds());
+  ctx.save();glow(C,12);ctx.fillStyle=C;ctx.font='700 38px Orbitron,monospace';ctx.fillText(ts,22,52);ng();ctx.fillStyle=C;ga(0.7);ctx.font='bold 12px "Share Tech Mono",monospace';ctx.fillText(DAYS[n.getDay()]+' '+n.getDate()+' '+MONTHS[n.getMonth()]+' '+n.getFullYear(),22,70);ga1();var lineY=88;if(lastArea){glow(C,8);ctx.fillStyle=C;ctx.font='700 13px "Share Tech Mono",monospace';ctx.fillText(lastArea,22,lineY);ng();lineY+=16;}if(lastStreet){ctx.fillStyle=C;ga(0.7);ctx.font='bold 11px "Share Tech Mono",monospace';ctx.fillText(lastStreet,22,lineY);ga1();}ctx.restore();
+  ctx.save();var bx=w-212,by=34;function bar(lbl,pct,col){ga(0.85);ctx.fillStyle=C;ctx.font='900 12px Orbitron,monospace';ctx.fillText(lbl,bx,by);ga1();ctx.fillStyle='rgba(255,255,255,.04)';ctx.fillRect(bx+42,by-12,120,5);ctx.strokeStyle=C;ga(0.2);ctx.lineWidth=1;ctx.strokeRect(bx+42,by-12,120,5);ga1();ctx.fillStyle=col;ctx.fillRect(bx+42,by-12,120*clamp(pct,0,100)/100,5);ctx.fillStyle=C;ctx.font='900 12px Orbitron,monospace';ctx.fillText(Math.round(pct)+'%',bx+170,by);by+=20;}bar('BAT',batPct,batPct>50?C3:batPct>20?C2:CR);var netLabel=document.getElementById('netV').textContent;var netMap={'SLOW-2G':15,'2G':30,'3G':65,'4G':90,'ONLINE':75,'OFFLINE':0};bar('NET',netMap[netLabel]||50,C);ga(0.8);ctx.fillStyle=C;ctx.font='900 11px Orbitron,monospace';ctx.fillText('CPU',bx,by);ctx.fillText('MEM',bx,by+14);ga1();ctx.fillStyle=C;ctx.font='bold 11px "Share Tech Mono",monospace';ctx.fillText(document.getElementById('cpuV').textContent,bx+42,by);ctx.fillText(document.getElementById('memV').textContent,bx+42,by+14);ctx.restore();
+  drawCompassTape(ctx,w/2-150,8,300,20);
+  drawArtificialHorizon(ctx,w/2,h/2,180,110);
+  ctx.save();glow(C,10);ctx.fillStyle=C;ctx.font='900 32px Orbitron,monospace';ctx.textAlign='center';ctx.fillText(speedKmh.toFixed(1),w/2,h-30);ng();ctx.fillStyle=C;ga(0.45);ctx.font='900 8px Orbitron,monospace';ctx.fillText('KM/H',w/2,h-20);ga1();var odoStr=totalDistMeters>=1000?(totalDistMeters/1000).toFixed(3)+' km':Math.round(totalDistMeters)+' m';ctx.fillStyle=C;ga(0.5);ctx.font='700 9px "Share Tech Mono",monospace';ctx.fillText('ODO '+odoStr,w/2,h-10);ga1();ctx.textAlign='start';ctx.restore();
+  ctx.save();var blX=22,blY2=h-66;ga(0.8);ctx.fillStyle=C;ctx.font='900 12px Orbitron,monospace';ctx.fillText('LAT',blX,blY2);ctx.fillText('LON',blX,blY2+16);ga1();ctx.fillStyle=C;ctx.font='bold 13px "Share Tech Mono",monospace';ctx.fillText(lat!=null?lat.toFixed(5)+'\u00B0':'ACQUIRING',blX+30,blY2);ctx.fillText(lon!=null?lon.toFixed(5)+'\u00B0':'ACQUIRING',blX+30,blY2+16);var gs2=document.getElementById('gpsS'),gc2=gs2?gs2.className:'';ctx.fillStyle=gc2.indexOf('locked')>-1?C3:gc2.indexOf('denied')>-1?CR:C2;ctx.font='900 10px Orbitron,monospace';ctx.fillText(gs2?gs2.textContent:'\u25CF GPS ACQUIRING',blX,blY2+32);
+  var tvEl=document.getElementById('threatVal');if(tvEl&&tvEl.textContent!=='--'&&document.getElementById('threatPanel').style.display!=='none'){var ty=blY2-70;ga(0.55);ctx.fillStyle=C;ctx.font='900 9px Orbitron,monospace';ctx.fillText('THREAT LEVEL',blX,ty);ga1();var tvCol=tvEl.style.color||C;glow(tvCol,8);ctx.fillStyle=tvCol;ctx.font='900 13px Orbitron,monospace';ctx.fillText(tvEl.textContent,blX,ty+14);ng();var tbEl=document.getElementById('threatBar'),tbPct=tbEl?parseFloat(tbEl.style.width)||0:0;ctx.fillStyle='rgba(255,255,255,.05)';ctx.fillRect(blX,ty+18,90,3);ctx.fillStyle=tvCol;ctx.fillRect(blX,ty+18,90*tbPct/100,3);var tsubEl=document.getElementById('threatSub');if(tsubEl){ga(0.5);ctx.fillStyle=C;ctx.font='700 9px "Share Tech Mono",monospace';ctx.fillText(tsubEl.textContent,blX,ty+30);ga1();}}ctx.restore();
+  if(poiData.length){ctx.save();var py=h/2-(poiData.length*14)/2;ga(0.55);ctx.fillStyle=C;ctx.font='900 10px Orbitron,monospace';ctx.fillText('NEARBY',22,py-10);ga1();poiData.forEach(function(item){ga(0.88);ctx.fillStyle=C;ctx.font='700 10px "Share Tech Mono",monospace';ctx.fillText(fmtDist(item.dist)+' '+b2arrow(item.bear)+' '+item.name,22,py);ga1();py+=14;});ctx.restore();}
+  ctx.save();function rtext(str,y,col,font,alpha){ctx.fillStyle=col||C;ga(alpha||1);ctx.font=font||'bold 12px "Share Tech Mono",monospace';ctx.fillText(str,w-ctx.measureText(str).width-22,y);ga1();}var wt=document.getElementById('wTemp').textContent;glow(C,10);ctx.fillStyle=C;ctx.font='700 34px Orbitron,monospace';ctx.fillText(wt,w-ctx.measureText(wt).width-22,h-108);ng();rtext(document.getElementById('wCond').textContent,h-88,C,'900 13px Orbitron,monospace',0.95);rtext('WIND '+document.getElementById('wWind').textContent+' km/h',h-70,C,'900 12px Orbitron,monospace',0.85);rtext('HUM '+document.getElementById('wHum').textContent,h-54,C,'900 12px Orbitron,monospace',0.85);rtext(document.getElementById('wSun').textContent,h-40,C,'bold 11px "Share Tech Mono",monospace',0.5);var ae2=document.getElementById('wAqi'),pe2=document.getElementById('wPollen');var hasEnv=(ae2&&ae2.textContent!=='--')||(pe2&&pe2.textContent!=='--');if(hasEnv){ctx.strokeStyle=C;ga(0.15);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(w-250,h-32);ctx.lineTo(w-22,h-32);ctx.stroke();ga1();if(ae2&&ae2.textContent!=='--')rtext('AQI '+ae2.textContent+' '+document.getElementById('wAqiLbl').textContent,h-18,ae2.style.color||C,'900 12px Orbitron,monospace',1);if(pe2&&pe2.textContent!=='--')rtext('POLLEN '+pe2.textContent+' '+document.getElementById('wPollenLbl').textContent,(ae2&&ae2.textContent!=='--')?h-32:h-18,pe2.style.color||C,'900 12px Orbitron,monospace',1);}ctx.restore();
+  var mmR=60,mmCx=w-mmR-22,mmCy=h/2;ctx.save();drawMinimap(ctx,mmCx,mmCy,mmR);ctx.fillStyle=C;ga(0.55);ctx.font='900 8px Orbitron,monospace';ctx.textAlign='center';ctx.fillText(mapHeadingRaw!==null?'HDG '+('00'+Math.round(mapHeading)).slice(-3)+'\u00B0':'HDG ---\u00B0',mmCx,mmCy+mmR+12);ctx.textAlign='start';ga1();ctx.restore();
+  drawEdgeArrows(ctx,w,h);
+  drawZoomButtons(ctx,w,h);
+  if(alertsState.length){ctx.save();var ay=20;alertsState.slice(0,3).forEach(function(a){var col=a.type==='ok'?C3:a.type==='warn'?C2:a.type==='danger'?CR:C;var aw=300,ax=w/2-aw/2;ctx.strokeStyle=col;ctx.lineWidth=1;ctx.strokeRect(ax,ay,aw,20);ctx.fillStyle=col;ctx.font='bold 11px Orbitron,monospace';ctx.fillText(a.msg,ax+8,ay+14);ay+=26;});ctx.restore();}
+  if(c2dThemeSweeping){ctx.save();c2dThemeSweepX+=w*0.07;if(c2dThemeSweepX>w*1.5){c2dThemeSweeping=false;c2dThemeSweepX=-9999;}else{var sw2=w*0.25;var tg2=ctx.createLinearGradient(c2dThemeSweepX-sw2,0,c2dThemeSweepX+sw2,0);tg2.addColorStop(0,'transparent');tg2.addColorStop(0.5,'rgba(255,255,255,0.18)');tg2.addColorStop(1,'transparent');ctx.fillStyle=tg2;ctx.fillRect(0,0,w,h);}ctx.restore();}
+}
 
-  // ---------- XR state ----------
-  let xrSession = null;
-  let refSpace = null;
-  let viewerSpace = null;
-  let hitTestSource = null;
-  let haveHitTest = false;
-  let haveAnchors = false;
+/* NV */
+function setNvDark(name,btn){nvDarkTheme=name;document.querySelectorAll('[id^="nvd-"]').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(nvActive&&nvCurrentMode==='dark')applyThemeNV(nvDarkTheme);}
+function setNvLight(name,btn){nvLightTheme=name;document.querySelectorAll('[id^="nvl-"]').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(nvActive&&nvCurrentMode==='light')applyThemeNV(nvLightTheme);}
+function applyThemeNV(name){currentTheme=name;document.body.className='theme-'+name;themeSweep();}
+async function toggleNV(){var btn=document.getElementById('nvBtn'),sub=document.getElementById('nvSub'),statusEl=document.getElementById('nvStatus');if(nvActive){nvActive=false;nvCurrentMode='';nvBrightSamples=[];clearInterval(nvLoopId);nvLoopId=null;if(nvStream){nvStream.getTracks().forEach(function(t){t.stop();});nvStream=null;}if(nvVideo){nvVideo.srcObject=null;nvVideo.remove();nvVideo=null;}btn.classList.remove('active');sub.classList.remove('visible');statusEl.textContent='\u25CF STANDBY';statusEl.style.color='';addAlert('AUTO NV OFF','info');return;}try{nvStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:64},height:{ideal:64}}});}catch(e){addAlert('CAM DENIED','warn');return;}nvVideo=document.createElement('video');nvVideo.setAttribute('autoplay','');nvVideo.setAttribute('playsinline','');nvVideo.setAttribute('muted','');nvVideo.muted=true;nvVideo.style.cssText='position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;';document.body.appendChild(nvVideo);nvVideo.srcObject=nvStream;nvVideo.disablePictureInPicture=true;nvVideo.addEventListener('pause',function(){if(nvActive){var p2=nvVideo.play();if(p2&&p2.catch)p2.catch(function(){});}});var playResult=nvVideo.play();if(playResult&&playResult.catch)playResult.catch(function(){});nvActive=true;btn.classList.add('active');sub.classList.add('visible');statusEl.textContent='\u25CF WARMING UP';addAlert('AUTO NV ON','ok');var readyWait=0,readyCheck=setInterval(function(){readyWait+=100;if(nvVideo&&nvVideo.readyState>=2){clearInterval(readyCheck);statusEl.textContent='\u25CF SENSING';nvLoopId=setInterval(nvSample,900);nvSample();}else if(readyWait>3000){clearInterval(readyCheck);statusEl.textContent='\u25CF NO SIGNAL';}},100);}
+var nvLoopId=null;
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&nvActive&&nvVideo){var p2=nvVideo.play();if(p2&&p2.catch)p2.catch(function(){});setTimeout(nvSample,200);}});
+function nvSample(){if(!nvActive||!nvVideo||nvVideo.readyState<2)return;try{nvCtx.drawImage(nvVideo,0,0,32,32);var data=nvCtx.getImageData(0,0,32,32).data;var sum=0,n2=0;for(var i=0;i<data.length;i+=16){sum+=data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114;n2++;}var lum=n2>0?sum/n2:128;nvBrightSamples.push(lum);if(nvBrightSamples.length>NV_SAMPLE_SIZE)nvBrightSamples.shift();var avg=nvBrightSamples.reduce(function(a,b){return a+b;},0)/nvBrightSamples.length;var pct=Math.round(avg/255*100);var statusEl=document.getElementById('nvStatus');if(avg<NV_DARK_THRESH&&nvCurrentMode!=='dark'){nvCurrentMode='dark';applyThemeNV(nvDarkTheme);statusEl.style.color=THEMES[nvDarkTheme].c;addAlert('NV \u00B7 NIGHT MODE','warn');}else if(avg>NV_LIGHT_THRESH&&nvCurrentMode!=='light'){nvCurrentMode='light';applyThemeNV(nvLightTheme);statusEl.style.color=THEMES[nvLightTheme].c;addAlert('NV \u00B7 DAY MODE','info');}statusEl.textContent=(nvCurrentMode==='dark'?'\u25CF NIGHT ':nvCurrentMode==='light'?'\u25CF DAY ':'\u25CF SENSING ')+pct+'%';}catch(e){}}
 
-  const state = {
-    started: false,
-    message: '',
-    zoom: 1,
-    zoomTarget: 1,
-    zoomLevels: [1,2,4,8,10],
-    zoomIdx: 0,
-    // hover hit
-    hitPos: null,            // Float32Array(3)
-    hitValid: false,
-    // lock
-    locked: false,
-    lockPos: null,           // Float32Array(3)
-    lockAnchor: null,
-    lockWasAnchor: false,
-    // smoothing (screen-space)
-    hoverScreen: [0,0,0],
-    lockScreen: [0,0,0],
-    hoverScreenSm: [0,0,0],
-    lockScreenSm: [0,0,0],
-    // capability flags
-    supportedAR: null,
-  };
+/* WebGL */
+function cSh(g,t,s){var sh=g.createShader(t);g.shaderSource(sh,s);g.compileShader(sh);return sh;}
+function cPr(g,vs,fs){var v=cSh(g,g.VERTEX_SHADER,vs),f=cSh(g,g.FRAGMENT_SHADER,fs),pr=g.createProgram();g.attachShader(pr,v);g.attachShader(pr,f);g.linkProgram(pr);return pr;}
+function m4i(){var m=new Float32Array(16);m[0]=1;m[5]=1;m[10]=1;m[15]=1;return m;}
+function m4mul(a,b){var o=new Float32Array(16);for(var i=0;i<4;i++)for(var j=0;j<4;j++){var s=0;for(var k=0;k<4;k++)s+=a[j+k*4]*b[i*4+k];o[i*4+j]=s;}return o;}
+function m4t(x,y,z){var m=m4i();m[12]=x;m[13]=y;m[14]=z;return m;}
+function m4s(x,y,z){var m=m4i();m[0]=x;m[5]=y;m[10]=z;return m;}
+function initXRGL(){prog=cPr(gl,'attribute vec3 aPos;attribute vec2 aUV;uniform mat4 uMVP;varying vec2 vUV;void main(){vUV=aUV;gl_Position=uMVP*vec4(aPos,1.0);}','precision mediump float;varying vec2 vUV;uniform sampler2D uTex;void main(){gl_FragColor=texture2D(uTex,vUV);}');prog.aPos=gl.getAttribLocation(prog,'aPos');prog.aUV=gl.getAttribLocation(prog,'aUV');prog.uMVP=gl.getUniformLocation(prog,'uMVP');prog.uTex=gl.getUniformLocation(prog,'uTex');var verts=new Float32Array([-0.5,-0.5,0,0,1,0.5,-0.5,0,1,1,0.5,0.5,0,1,0,-0.5,0.5,0,0,0]);var inds=new Uint16Array([0,1,2,0,2,3]);vbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bufferData(gl.ARRAY_BUFFER,verts,gl.STATIC_DRAW);ibo=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,inds,gl.STATIC_DRAW);tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,hudC.width,hudC.height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.useProgram(prog);gl.uniform1i(prog.uTex,0);}
+function uploadTex(t){if(t-lastUp<33)return;lastUp=t;drawHud2D();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,hudC);if(mirrorOn){mirCtx.clearRect(0,0,mirC.width,mirC.height);mirCtx.drawImage(hudC,0,0,mirC.width,mirC.height);}}
 
-  function cycleZoom(){
-    state.zoomIdx = (state.zoomIdx + 1) % state.zoomLevels.length;
-    state.zoomTarget = state.zoomLevels[state.zoomIdx];
-  }
+/* ═══════════════════════════════════════════════════════════════
+   XR FRAME — FIXED yaw/pitch/roll from pose matrix
+   ═══════════════════════════════════════════════════════════════ */
+function xrFrame(t,frame){
+  if(!xrSession)return;xrSession.requestAnimationFrame(xrFrame);
+  var pose=frame.getViewerPose(xrRefSpace);if(!pose)return;
 
-  async function startXR(){
-    if (!navigator.xr){
-      state.message = 'WebXR not available in this browser.';
-      return;
-    }
-    try{
-      state.supportedAR = await navigator.xr.isSessionSupported('immersive-ar');
-    } catch(e){
-      state.supportedAR = false;
-    }
-    if (!state.supportedAR){
-      state.message = 'immersive-ar not supported here. (Quest Browser setting/runtime?)';
-      return;
-    }
+  var pm=pose.transform.matrix;
+  /* Column 2 = viewer Z-axis in world. Forward = -Z */
+  var fwdX=-pm[8],fwdY=-pm[9],fwdZ=-pm[10];
 
-    const required = [];
-    const optional = ['local-floor', 'anchors'];
-    // Try to require hit-test; if it fails, retry without it (but then lock/hover won’t work).
-    let session = null;
-    try{
-      session = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test'],
-        optionalFeatures: optional
-      });
-      haveHitTest = true;
-    } catch(e){
-      session = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: required,
-        optionalFeatures: optional
-      });
-      haveHitTest = false;
-    }
+  /* FIX: atan2(fwdX, -fwdZ) gives 0 at rest (-Z), increases CW (turning right).
+     Old formula atan2(fwdX, fwdZ) gave 180 at rest and decreased when turning right. */
+  var xrYaw=Math.atan2(fwdX,-fwdZ)*180/Math.PI;
 
-    xrSession = session;
-    state.started = true;
-    state.message = '';
+  if(xrInitialYaw===null)xrInitialYaw=xrYaw;
+  var yawDelta=xrYaw-xrInitialYaw;
 
-    // Set up GL layer with alpha for passthrough
-    await gl.makeXRCompatible();
-    const baseLayer = new XRWebGLLayer(xrSession, gl, { alpha: true, depth: true, antialias: true });
-    xrSession.updateRenderState({ baseLayer });
+  mapHeading=((xrHeadingOffset+yawDelta)%360+360)%360;
+  mapHeadingTarget=mapHeading;
+  mapHeadingRaw=mapHeading;
 
-    // Reference spaces
-    try{
-      refSpace = await xrSession.requestReferenceSpace('local-floor');
-    } catch(e){
-      refSpace = await xrSession.requestReferenceSpace('local');
-    }
-    viewerSpace = await xrSession.requestReferenceSpace('viewer');
+  /* FIX: positive pitch when looking UP (fwdY>0 = looking up) */
+  ahPitch=Math.asin(clamp(fwdY,-1,1))*180/Math.PI;
 
-    // Detect anchors support (best-effort)
-    haveAnchors = false;
-    try{
-      // If 'anchors' was accepted, some implementations expose XRAnchor / createAnchor on hit results.
-      // We'll check dynamically when we get the first hit.
-      haveAnchors = true;
-    } catch(e){
-      haveAnchors = false;
-    }
+  /* FIX: roll from viewer Y-axis (column 1). pm[4]=Y_x, pm[5]=Y_y.
+     Head tilted right → pm[4]>0 → positive roll */
+  ahRoll=Math.atan2(pm[4],pm[5])*180/Math.PI;
 
-    // Hit-test source
-    if (haveHitTest){
-      try{
-        hitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
-      } catch(e){
-        hitTestSource = null;
-        haveHitTest = false;
-      }
-    }
-
-    // Input
-    xrSession.addEventListener('select', () => {
-      // Trigger: lock/unlock
-      if (state.locked){
-        state.locked = false;
-        state.lockPos = null;
-        state.lockAnchor = null;
-        state.lockWasAnchor = false;
-      } else {
-        if (state.hitValid && state.hitPos){
-          // Try anchor if possible (runtime check)
-          if (state._lastHitResult && typeof state._lastHitResult.createAnchor === 'function'){
-            (async () => {
-              try{
-                let a = null;
-                // Some implementations require referenceSpace param
-                try { a = await state._lastHitResult.createAnchor(refSpace); }
-                catch(_) { a = await state._lastHitResult.createAnchor(); }
-                if (a){
-                  state.locked = true;
-                  state.lockAnchor = a;
-                  state.lockWasAnchor = true;
-                } else {
-                  state.locked = true;
-                  state.lockPos = new Float32Array(state.hitPos);
-                  state.lockWasAnchor = false;
-                }
-              } catch(e){
-                state.locked = true;
-                state.lockPos = new Float32Array(state.hitPos);
-                state.lockWasAnchor = false;
-              }
-            })();
-          } else {
-            state.locked = true;
-            state.lockPos = new Float32Array(state.hitPos);
-            state.lockWasAnchor = false;
-          }
+  /* THUMBSTICK ZOOM — right stick Y-axis */
+  if(xrSession.inputSources){
+    for(var si=0;si<xrSession.inputSources.length;si++){
+      var src=xrSession.inputSources[si];
+      if(src.gamepad&&src.gamepad.axes.length>=4){
+        var thumbY=src.gamepad.axes[3];
+        if(Math.abs(thumbY)>0.15){
+          hudZoom=clamp(hudZoom-thumbY*HUD_ZOOM_STEP,HUD_ZOOM_MIN,HUD_ZOOM_MAX);
         }
       }
+    }
+  }
+
+  uploadTex(t);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,xrLayer.framebuffer);
+  gl.disable(gl.DEPTH_TEST);gl.disable(gl.CULL_FACE);
+  gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo);
+  var stride=5*4;
+  gl.enableVertexAttribArray(prog.aPos);gl.vertexAttribPointer(prog.aPos,3,gl.FLOAT,false,stride,0);
+  gl.enableVertexAttribArray(prog.aUV);gl.vertexAttribPointer(prog.aUV,2,gl.FLOAT,false,stride,3*4);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,tex);
+
+  /* Quad placement — zoom scales size & pulls closer */
+  var baseZ=-1.10,baseSx=1.35,baseSy=0.68;
+  var zDist=baseZ/hudZoom;
+  var zSx=baseSx*hudZoom,zSy=baseSy*hudZoom;
+  var om=m4mul(m4t(0,-0.10,zDist),m4s(zSx,zSy,1.0));
+  var mm2=m4mul(pose.transform.matrix,om);
+
+  for(var i=0;i<pose.views.length;i++){
+    var view=pose.views[i],vp=xrLayer.getViewport(view);
+    gl.viewport(vp.x,vp.y,vp.width,vp.height);
+    var mvp=m4mul(view.projectionMatrix,m4mul(view.transform.inverse.matrix,mm2));
+    gl.uniformMatrix4fv(prog.uMVP,false,mvp);
+    gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+  }
+}
+
+async function enterXR(){
+  var btn=document.getElementById('xrbtn');
+  if(xrSession){try{await xrSession.end();}catch(_){}return;}
+  if(!navigator.xr){addAlert('WebXR N/A','warn');return;}
+  try{
+    if(!await navigator.xr.isSessionSupported('immersive-ar')){addAlert('AR NOT SUPPORTED','warn');return;}
+    xrSession=await navigator.xr.requestSession('immersive-ar',{requiredFeatures:['local'],optionalFeatures:['local-floor']});
+    btn.textContent='\u25C8 EXIT AR';
+    document.getElementById('themePicker').style.display='none';
+    document.querySelectorAll('#minimapWrap,#compassWrap,#horizonWrap,#speedPanel,#edgeArrowCanvas,.tl,.tr,.bl,.br,.corner,.alerts,#poiPanel,#nvPanel').forEach(function(e){e.style.display='none';});
+    document.body.style.background='transparent';
+    gl=document.createElement('canvas').getContext('webgl',{xrCompatible:true,alpha:true,antialias:true,premultipliedAlpha:true});
+    xrLayer=new XRWebGLLayer(xrSession,gl,{alpha:true});
+    xrSession.updateRenderState({baseLayer:xrLayer});
+    try{xrRefSpace=await xrSession.requestReferenceSpace('local-floor');}catch(_){xrRefSpace=await xrSession.requestReferenceSpace('local');}
+    xrHeadingOffset=mapHeading!=null?mapHeading:0;
+    xrInitialYaw=null;
+    hudZoom=1.0;
+    initXRGL();
+
+    /* Grip squeeze for zoom */
+    xrSession.addEventListener('squeeze',function(ev){
+      if(ev.inputSource.handedness==='right'){
+        hudZoom=clamp(hudZoom+0.15,HUD_ZOOM_MIN,HUD_ZOOM_MAX);
+      }else{
+        hudZoom=clamp(hudZoom-0.15,HUD_ZOOM_MIN,HUD_ZOOM_MAX);
+      }
+      addAlert('ZOOM '+Math.round(hudZoom*100)+'%','info');
     });
 
-    xrSession.addEventListener('squeeze', () => {
-      // Grip: zoom cycle
-      cycleZoom();
+    xrSession.addEventListener('end',function(){
+      xrSession=null;xrRefSpace=null;xrLayer=null;
+      document.getElementById('themePicker').style.display='flex';
+      document.querySelectorAll('#minimapWrap,#compassWrap,#horizonWrap,#speedPanel,#edgeArrowCanvas,.tl,.tr,.bl,.br,.corner,.alerts,#poiPanel,#nvPanel').forEach(function(e){e.style.display='';});
+      btn.textContent='\u25C8 ENTER AR MODE';
     });
-
-    xrSession.addEventListener('end', () => {
-      xrSession = null;
-      refSpace = null;
-      viewerSpace = null;
-      hitTestSource = null;
-      haveHitTest = false;
-      state.started = false;
-      state.locked = false;
-      state.lockAnchor = null;
-      state.lockPos = null;
-      state.hitValid = false;
-      state.message = 'Session ended. Tap to start again.';
-      drawSplash(); // show message
-    });
-
-    xrSession.requestAnimationFrame(onXRFrame);
-  }
-
-  // ---------- Rendering helpers ----------
-  function buildCrossLines(pos, size){
-    // 3 axes cross centered at pos: 6 segments -> 12 vertices (we’ll do 3 segments only for less clutter)
-    const x=pos[0], y=pos[1], z=pos[2];
-    const s=size;
-    // X segment, Y segment, Z segment (each 2 points)
-    return new Float32Array([
-      x-s, y, z,   x+s, y, z,
-      x, y-s, z,   x, y+s, z,
-      x, y, z-s,   x, y, z+s,
-    ]);
-  }
-
-  function drawCorners(ctx, x, y, w, h, thickness){
-    const t = thickness;
-    const L = Math.min(w,h) * 0.25;
-    ctx.lineWidth = t;
-
-    // top-left
-    ctx.beginPath();
-    ctx.moveTo(x, y+L); ctx.lineTo(x, y); ctx.lineTo(x+L, y);
-    ctx.stroke();
-    // top-right
-    ctx.beginPath();
-    ctx.moveTo(x+w-L, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+L);
-    ctx.stroke();
-    // bottom-right
-    ctx.beginPath();
-    ctx.moveTo(x+w, y+h-L); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w-L, y+h);
-    ctx.stroke();
-    // bottom-left
-    ctx.beginPath();
-    ctx.moveTo(x+L, y+h); ctx.lineTo(x, y+h); ctx.lineTo(x, y+h-L);
-    ctx.stroke();
-  }
-
-  function drawArrow(ctx, x, y, ang, size){
-    const s=size;
-    ctx.save();
-    ctx.translate(x,y);
-    ctx.rotate(ang);
-    ctx.beginPath();
-    ctx.moveTo(0, -s);
-    ctx.lineTo(s*0.7, s);
-    ctx.lineTo(0, s*0.4);
-    ctx.lineTo(-s*0.7, s);
-    ctx.closePath();
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawHUDForEye(h, view, zoomedProj, viewMat, debugText){
-    const ctx = h.ctx;
-    const W = h.w, H = h.h;
-
-    // Clear
-    ctx.clearRect(0,0,W,H);
-
-    // Styling
-    const col = '#00e5ff';
-    const colDim = 'rgba(0,229,255,0.35)';
-    const shadow = 'rgba(0,229,255,0.55)';
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.shadowColor = shadow;
-    ctx.shadowBlur = 8;
-
-    // Subtle scanlines (kept very light so readability stays)
-    ctx.strokeStyle = 'rgba(0,229,255,0.05)';
-    ctx.lineWidth = 1;
-    for (let y=0; y<H; y+=6){
-      ctx.beginPath();
-      ctx.moveTo(0, y+0.5);
-      ctx.lineTo(W, y+0.5);
-      ctx.stroke();
-    }
-
-    // Clock / date (top-left)
-    const now = new Date();
-    const timeStr = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
-    const dateStr = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
-
-    ctx.fillStyle = col;
-    ctx.font = '700 22px monospace';
-    ctx.fillText(timeStr, 16, 30);
-    ctx.font = '16px monospace';
-    ctx.fillStyle = colDim;
-    ctx.fillText(dateStr, 16, 52);
-
-    // Zoom (top-right)
-    ctx.fillStyle = col;
-    ctx.font = '16px monospace';
-    const zStr = `ZOOM ${state.zoom.toFixed(1)}x`;
-    const zW = ctx.measureText(zStr).width;
-    ctx.fillText(zStr, W - 16 - zW, 30);
-    // zoom bar
-    const barW = 120, barH = 6;
-    const bx = W - 16 - barW;
-    const by = 40;
-    ctx.strokeStyle = colDim;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(bx, by, barW, barH);
-    ctx.fillStyle = col;
-    const zNorm = clamp((state.zoom - 1) / (10 - 1), 0, 1);
-    ctx.fillRect(bx, by, barW*zNorm, barH);
-
-    // Center reticle
-    const cx = W*0.5, cy = H*0.5;
-    const hover = state.hitValid;
-    const locked = state.locked;
-    ctx.strokeStyle = col;
-    ctx.fillStyle = col;
-    ctx.lineWidth = hover ? 2.0 : 1.4;
-
-    // ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, hover ? 14 : 10, 0, Math.PI*2);
-    ctx.stroke();
-    // crosshair
-    ctx.beginPath();
-    ctx.moveTo(cx-18, cy); ctx.lineTo(cx-6, cy);
-    ctx.moveTo(cx+6, cy);  ctx.lineTo(cx+18, cy);
-    ctx.moveTo(cx, cy-18); ctx.lineTo(cx, cy-6);
-    ctx.moveTo(cx, cy+6);  ctx.lineTo(cx, cy+18);
-    ctx.stroke();
-
-    if (locked){
-      ctx.font = '700 14px monospace';
-      ctx.fillText('LOCK', cx-18, cy-22);
-    } else if (hover){
-      ctx.font = '14px monospace';
-      ctx.fillStyle = colDim;
-      ctx.fillText('HOVER', cx-24, cy-22);
-    }
-
-    // Bottom-right env panel (tight cluster)
-    const panelW = 300;
-    const panelX = W - 16 - panelW;
-    let py = H - 16;
-
-    const lines = [];
-    const loc = (env.lat!=null && env.lon!=null) ? `LOC ${env.lat.toFixed(4)}, ${env.lon.toFixed(4)}` : `LOC --`;
-    lines.push({t: loc, c: colDim});
-    const w1 = (env.tempC!=null) ? `${env.tempC}°C` : `--°C`;
-    const w2 = env.cond || '--';
-    const w3 = (env.wind!=null) ? `${env.wind} km/h` : `-- km/h`;
-    const w4 = (env.hum!=null) ? `${env.hum}%` : `--%`;
-    lines.push({t: `TEMP ${w1}   COND ${w2}`, c: col});
-    lines.push({t: `WIND ${w3}   HUM ${w4}`, c: colDim});
-    const sun = (env.sunrise && env.sunset) ? `↑ ${env.sunrise}  ↓ ${env.sunset}` : `↑ --:--  ↓ --:--`;
-    lines.push({t: `SUN ${sun}`, c: colDim});
-
-    // Divider + AQI / Pollen like old HUD
-    if (env.aqi != null || env.pollenTop != null){
-      lines.push({t: '─'.repeat(28), c: 'rgba(0,229,255,0.18)'}); // minimal divider
-    }
-    if (env.aqi != null){
-      const c = env.aqiColor || col;
-      lines.push({t: `AQI ${env.aqi}  ${env.aqiLabel||''}`, c});
-    } else {
-      lines.push({t: `AQI --`, c: colDim});
-    }
-
-    if (env.pollenTop != null){
-      const c = env.pollenColor || col;
-      lines.push({t: `POLLEN ${env.pollenTop}  ${env.pollenType||''}`, c});
-    } else {
-      lines.push({t: `POLLEN --`, c: colDim});
-    }
-
-    // Draw panel background corners only (no big box)
-    const lineH = 18;
-    const panelH = lines.length * lineH + 12;
-    const panelY = H - 16 - panelH;
-
-    // corners
-    ctx.strokeStyle = colDim;
-    ctx.lineWidth = 1.5;
-    drawCorners(ctx, panelX, panelY, panelW, panelH, 1.5);
-
-    // text
-    ctx.shadowBlur = 10;
-    let ty = panelY + 22;
-    for (const L of lines){
-      ctx.fillStyle = L.c;
-      ctx.font = '14px monospace';
-      ctx.fillText(L.t, panelX + 12, ty);
-      ty += lineH;
-    }
-
-    // Capability / debug line bottom-left (small)
-    ctx.shadowBlur = 0;
-    ctx.font = '13px monospace';
-    ctx.fillStyle = 'rgba(0,229,255,0.45)';
-    const cap = `AR ${(state.supportedAR?'OK':'--')}  HIT ${(haveHitTest?'OK':'--')}  ANC ${(state.lockWasAnchor?'OK': (haveHitTest?'--':'--'))}  Z ${state.zoom.toFixed(1)}x`;
-    ctx.fillText(cap, 16, H - 16);
-
-    if (debugText){
-      ctx.fillStyle = 'rgba(255,109,0,0.7)';
-      ctx.fillText(debugText, 16, H - 34);
-    }
-
-    // Hover / lock bracket projected onto screen (real-world hitpoint / anchor point)
-    // We compute per-eye projection for better stereo alignment.
-    const marker = locked ? state.lockPos : state.hitPos;
-    const valid = locked ? (state.lockPos!=null) : state.hitValid;
-
-    if (valid && marker){
-      // project
-      const tmp = [0,0,0];
-      if (projectToScreen(tmp, marker, viewMat, zoomedProj, W, H)){
-        // smooth
-        const sm = locked ? state.lockScreenSm : state.hoverScreenSm;
-        sm[0] = lerp(sm[0]||tmp[0], tmp[0], 0.25);
-        sm[1] = lerp(sm[1]||tmp[1], tmp[1], 0.25);
-        sm[2] = tmp[2];
-
-        const sx = sm[0], sy = sm[1];
-        const on = (sx>=0 && sx<=W && sy>=0 && sy<=H);
-        if (on){
-          const bw = locked ? 120 : 80;
-          const bh = locked ? 70 : 48;
-          const x = sx - bw/2;
-          const y = sy - bh/2;
-
-          ctx.strokeStyle = locked ? col : colDim;
-          ctx.lineWidth = locked ? 2.4 : 1.7;
-          drawCorners(ctx, x, y, bw, bh, ctx.lineWidth);
-
-          ctx.font = locked ? '700 14px monospace' : '13px monospace';
-          ctx.fillStyle = locked ? col : colDim;
-          const lbl = locked ? 'TARGET' : 'SURFACE';
-          ctx.fillText(lbl, x+8, y-6);
-
-        } else {
-          // off-screen arrow
-          const dx = sx - W*0.5;
-          const dy = sy - H*0.5;
-          const ang = Math.atan2(dy, dx);
-          const margin = 26;
-          const ex = clamp(sx, margin, W-margin);
-          const ey = clamp(sy, margin, H-margin);
-          ctx.strokeStyle = locked ? col : colDim;
-          ctx.lineWidth = locked ? 2.2 : 1.6;
-          drawArrow(ctx, ex, ey, ang, locked ? 16 : 12);
-        }
-      }
-    }
-
-    ctx.restore();
-  }
-
-  function updateHudTexture(h){
-    gl.bindTexture(gl.TEXTURE_2D, h.tex);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, h.canvas);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-  }
-
-  // ---------- Main XR frame ----------
-  const tmpProj = new Float32Array(16);
-  const tmpView = new Float32Array(16);
-
-  function onXRFrame(t, frame){
-    const session = frame.session;
-    const baseLayer = session.renderState.baseLayer;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, baseLayer.framebuffer);
-
-    // Smooth zoom
-    const dt = 0.016; // approx; XR timestamps vary
-    const k = 1 - Math.pow(0.001, dt * 4.5); // easing strength
-    state.zoom = lerp(state.zoom, state.zoomTarget, k);
-
-    // Pose
-    const pose = frame.getViewerPose(refSpace);
-    if (!pose){
-      session.requestAnimationFrame(onXRFrame);
-      return;
-    }
-
-    // Hit-test update
-    state.hitValid = false;
-    state._lastHitResult = null;
-    if (haveHitTest && hitTestSource){
-      const hits = frame.getHitTestResults(hitTestSource);
-      if (hits && hits.length){
-        const hit = hits[0];
-        const hitPose = hit.getPose(refSpace);
-        if (hitPose){
-          const m = hitPose.transform.matrix; // Float32Array(16)
-          state.hitPos = new Float32Array([m[12], m[13], m[14]]);
-          state.hitValid = true;
-          state._lastHitResult = hit;
-        }
-      }
-    }
-
-    // Locked anchor update
-    if (state.locked){
-      if (state.lockAnchor && state.lockAnchor.anchorSpace){
-        const p = frame.getPose(state.lockAnchor.anchorSpace, refSpace);
-        if (p){
-          const m = p.transform.matrix;
-          state.lockPos = new Float32Array([m[12], m[13], m[14]]);
-        } else {
-          // lost anchor pose (tracking failure) — keep last position
-        }
-      }
-      // If no anchor, lockPos stays as initially set.
-      if (!state.lockPos){
-        state.locked = false;
-      }
-    }
-
-    // Render settings
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-    gl.disable(gl.BLEND);
-
-    // For passthrough: do NOT clear color; clear depth only
-    gl.clear(gl.DEPTH_BUFFER_BIT);
-
-    const views = pose.views;
-
-    // Ensure HUD per-eye canvases match each eye viewport size (crisp)
-    for (let i=0;i<Math.min(2, views.length); i++){
-      const view = views[i];
-      const vp = baseLayer.getViewport(view);
-      const h = hud[i];
-      if (h.w !== vp.width || h.h !== vp.height){
-        h.w = vp.width; h.h = vp.height;
-        h.canvas.width = vp.width;
-        h.canvas.height = vp.height;
-      }
-    }
-
-    // Draw each eye
-    for (let i=0;i<views.length; i++){
-      const view = views[i];
-      const vp = baseLayer.getViewport(view);
-      gl.viewport(vp.x, vp.y, vp.width, vp.height);
-
-      // View matrix
-      // XRView.transform is pose of the view in refSpace; its inverse is the view matrix.
-      const viewMat = view.transform.inverse.matrix;
-      for (let k=0;k<16;k++) tmpView[k] = viewMat[k];
-
-      // Projection with zoom (affects 3D markers only)
-      makeZoomedProjection(tmpProj, view.projectionMatrix, state.zoom);
-
-      // 3D marker rendering: a tiny cross at hit and at lock (so you see it's real space, not an imaginary plane)
-      gl.useProgram(prog3d);
-      gl.uniformMatrix4fv(uView, false, tmpView);
-      gl.uniformMatrix4fv(uProj, false, tmpProj);
-      gl.bindVertexArray(vao3d);
-
-      // Hit marker
-      if (state.hitValid && state.hitPos){
-        const size = 0.03;
-        const verts = buildCrossLines(state.hitPos, size);
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo3d);
-        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
-        gl.uniform4f(uColor, 0.0, 0.9, 1.0, 0.85);
-        gl.drawArrays(gl.LINES, 0, verts.length/3);
-      }
-
-      // Lock marker
-      if (state.locked && state.lockPos){
-        const size = 0.05;
-        const verts = buildCrossLines(state.lockPos, size);
-        gl.bindBuffer(gl.ARRAY_BUFFER, vbo3d);
-        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
-        gl.uniform4f(uColor, 0.0, 0.9, 1.0, 1.0);
-        gl.drawArrays(gl.LINES, 0, verts.length/3);
-      }
-
-      gl.bindVertexArray(null);
-
-      // HUD 2D overlay for this eye
-      const h = hud[Math.min(i,1)];
-      const debugText = (!haveHitTest) ? 'NO HIT-TEST: hover/lock uses last-known or none.' : '';
-      drawHUDForEye(h, view, tmpProj, tmpView, debugText);
-      updateHudTexture(h);
-
-      // Composite HUD fullscreen quad
-      gl.disable(gl.DEPTH_TEST);
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-      gl.useProgram(progHud);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, h.tex);
-      gl.uniform1i(uTex, 0);
-      gl.bindVertexArray(vaoHud);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      gl.bindVertexArray(null);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.disable(gl.BLEND);
-    }
-
-    session.requestAnimationFrame(onXRFrame);
-  }
-
-  // ---------- Splash / inline fallback drawing ----------
-  const splash = canvas.getContext('2d');
-  function resizeCanvasCSS(){
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w = Math.floor(canvas.clientWidth * dpr);
-    const h = Math.floor(canvas.clientHeight * dpr);
-    if (canvas.width !== w || canvas.height !== h){
-      canvas.width = w; canvas.height = h;
-    }
-  }
-  function drawSplash(){
-    resizeCanvasCSS();
-    const W = canvas.width, H = canvas.height;
-    splash.clearRect(0,0,W,H);
-    splash.fillStyle = 'rgba(0,229,255,0.9)';
-    splash.shadowColor = 'rgba(0,229,255,0.7)';
-    splash.shadowBlur = 16;
-    splash.font = '700 28px monospace';
-    const title = 'AR HUD';
-    splash.fillText(title, 24, 52);
-    splash.shadowBlur = 0;
-    splash.font = '16px monospace';
-    splash.fillStyle = 'rgba(0,229,255,0.55)';
-    splash.fillText('Tap/click to start immersive-ar passthrough.', 24, 84);
-    splash.fillText('Trigger: lock/unlock target. Grip: cycle zoom.', 24, 108);
-    splash.fillText('Hover/lock is a REAL hit-test point (not fake boxes).', 24, 132);
-    if (state.message){
-      splash.fillStyle = 'rgba(255,109,0,0.85)';
-      splash.fillText(state.message, 24, 168);
-    }
-    splash.fillStyle = 'rgba(0,229,255,0.35)';
-    splash.fillText('If immersive-ar fails: check Quest Browser flags/runtime support.', 24, 198);
-  }
-
-  // Start geolocation + periodic env refresh
-  startGeo();
-  setInterval(() => {
-    if (env.lat!=null && env.lon!=null) fetchEnv(env.lat, env.lon);
-  }, 60*1000);
-
-  // Start interaction
-  drawSplash();
-  window.addEventListener('resize', drawSplash);
-
-  // One-canvas: click/tap to start XR
-  canvas.addEventListener('pointerdown', async (e) => {
-    e.preventDefault();
-    if (xrSession) return;
-    try{
-      await startXR();
-    } catch(err){
-      state.message = String(err && err.message ? err.message : err);
-      drawSplash();
-    }
-  }, {passive:false});
-})();
+    xrSession.requestAnimationFrame(xrFrame);
+  }catch(e){addAlert('XR ERR','warn');}
+}
+(function(){var taps=0,t0=0;document.getElementById('xrbtn').addEventListener('click',function(){var now=Date.now();if(now-t0>900)taps=0;t0=now;taps++;if(taps>=5){taps=0;mirrorOn=!mirrorOn;mirC.style.display=mirrorOn?'block':'none';}});})();
 </script>
 </body>
 </html>
-"""
-out = Path('/mnt/data/quest3_ar_hud_canvas_only.html')
-out.write_text(html, encoding='utf-8')
-str(out), out.stat().st_size
