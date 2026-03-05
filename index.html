@@ -8,11 +8,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Share+Tech+Mono&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100vw;height:100vh;overflow:hidden;background:#000;}
-/* ONE canvas, full screen */
 #c{position:fixed;top:0;left:0;pointer-events:auto;}
-/* video hidden — only needed as getUserMedia sink */
 #zv{display:none;position:fixed;}
-/* zoom feed canvas hidden — drawn into main canvas via drawImage */
 #zc{display:none;position:fixed;}
 </style>
 </head>
@@ -59,10 +56,9 @@ function rc(a){ var r=R(); return 'rgba('+r[0]+','+r[1]+','+r[2]+','+a+')'; }
 function nextTheme(){ themeIdx=(themeIdx+1)%THEMES.length; }
 
 // ═══════════════════════════════════════════════════════════════
-// CANVAS BUTTON SYSTEM  — all interaction via mouse/touch on canvas
+// CANVAS BUTTON SYSTEM
 // ═══════════════════════════════════════════════════════════════
-// Buttons are defined each frame with their hit rect; clicks dispatched here.
-var canvasButtons = []; // [{x,y,w,h,id}] rebuilt each draw frame
+var canvasButtons = [];
 
 cv.addEventListener('click', function(e){
   var rect = cv.getBoundingClientRect();
@@ -89,7 +85,6 @@ cv.addEventListener('touchend', function(e){
   }
 },{passive:false});
 
-// hover tracking
 var mouseX=-1, mouseY=-1;
 cv.addEventListener('mousemove', function(e){
   var rect = cv.getBoundingClientRect();
@@ -99,7 +94,6 @@ cv.addEventListener('mousemove', function(e){
 cv.addEventListener('mouseleave', function(){ mouseX=-1; mouseY=-1; });
 
 function isHover(b){ return mouseX>=b.x && mouseX<=b.x+b.w && mouseY>=b.y && mouseY<=b.y+b.h; }
-
 function regBtn(id,x,y,w,h){ canvasButtons.push({id:id,x:x,y:y,w:w,h:h}); }
 
 function handleBtn(id){
@@ -108,7 +102,6 @@ function handleBtn(id){
   if(id.slice(0,2)==='th'){ themeIdx=parseInt(id.slice(2)); }
 }
 
-// keyboard shortcuts
 window.addEventListener('keydown', function(e){
   if(e.key==='z'||e.key==='Z') toggleZoom();
   if(e.key==='t'||e.key==='T') nextTheme();
@@ -125,7 +118,7 @@ var S = {
   pollen:null, pollenLabel:'', pollenName:'', pollenColor:'#aaa',
   gps:'ACQUIRING',
   lat:null, lon:null,
-  arState:'CHECK',   // 'CHECK'|'AVAILABLE'|'UNAVAILABLE'|'ACTIVE'
+  arState:'CHECK',
   hint:'', hintAlpha:0, hintTimer:0,
 };
 
@@ -209,9 +202,9 @@ function pollenInfo(v){if(v<=10)return{l:'LOW',c:'#39ff14'};if(v<=30)return{l:'M
 // ZOOM
 // ═══════════════════════════════════════════════════════════════
 var ZOOM_LEVELS=[1,2,4,8,12,20];
-var zoomIdx=0, zoomActive=false, zoomStream=null, zoomRAF=null;
+var zoomIdx=0, zoomActive=false, zoomStream=null;
 var zv  = document.getElementById('zv');
-var zco = document.getElementById('zc');  // offscreen zoom canvas
+var zco = document.getElementById('zc');
 var zctx= zco.getContext('2d');
 
 function toggleZoom(){
@@ -219,37 +212,35 @@ function toggleZoom(){
     zoomActive=true; zoomIdx=0;
     if(!zoomStream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
       navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920}}})
-      .then(function(s){ zoomStream=s; zv.srcObject=s; zv.play(); renderZoomOffscreen(); })
+      .then(function(s){ zoomStream=s; zv.srcObject=s; zv.play(); })
       .catch(function(){ showHint('NO CAMERA ACCESS'); zoomActive=false; });
-    } else if(zoomStream){ renderZoomOffscreen(); }
+    }
   } else {
     zoomIdx=(zoomIdx+1)%ZOOM_LEVELS.length;
-    if(zoomIdx===0){
-      zoomActive=false;
-      if(zoomRAF){ cancelAnimationFrame(zoomRAF); zoomRAF=null; }
+    if(zoomIdx===0) zoomActive=false;
+  }
+}
+
+function renderZoomFrame(){
+  if(!zoomActive||!zoomStream) return;
+  if(zv.readyState>=2){
+    var vw=zv.videoWidth, vh=zv.videoHeight, z=ZOOM_LEVELS[zoomIdx];
+    if(vw&&vh){
+      var sw=vw/z, sh=vh/z, sx=(vw-sw)/2, sy=(vh-sh)/2;
+      zctx.drawImage(zv, sx,sy,sw,sh, 0,0,zco.width,zco.height);
+      zctx.fillStyle='rgba(0,0,0,.2)';
+      for(var y=0;y<zco.height;y+=3) zctx.fillRect(0,y,zco.width,1);
+      var r=R(); zctx.fillStyle='rgba('+r[0]+','+r[1]+','+r[2]+',.05)'; zctx.fillRect(0,0,zco.width,zco.height);
     }
   }
 }
 
-function renderZoomOffscreen(){
-  if(!zoomActive){ return; }
-  if(zv.readyState>=2){
-    var vw=zv.videoWidth, vh=zv.videoHeight, z=ZOOM_LEVELS[zoomIdx];
-    var sw=vw/z, sh=vh/z, sx=(vw-sw)/2, sy=(vh-sh)/2;
-    zctx.drawImage(zv, sx,sy,sw,sh, 0,0,600,450);
-    // scanlines
-    zctx.fillStyle='rgba(0,0,0,.2)';
-    for(var y=0;y<450;y+=3) zctx.fillRect(0,y,600,1);
-    // colour tint
-    var r=R(); zctx.fillStyle='rgba('+r[0]+','+r[1]+','+r[2]+',.05)'; zctx.fillRect(0,0,600,450);
-  }
-  zoomRAF = requestAnimationFrame(renderZoomOffscreen);
-}
+// ═══════════════════════════════════════════════════════════════
+// WebXR  +  QUAD RENDERING FOR QUEST 3
+// ═══════════════════════════════════════════════════════════════
+var xrSession=null, xrGL=null, xrLayer=null, xrRef=null;
+var xrProg=null, xrVBO=null, xrIBO=null, xrTex=null;
 
-// ═══════════════════════════════════════════════════════════════
-// WebXR
-// ═══════════════════════════════════════════════════════════════
-var xrSession=null;
 S.arState='CHECK';
 (async function(){
   if(!navigator.xr){ S.arState='UNAVAILABLE'; return; }
@@ -257,24 +248,95 @@ S.arState='CHECK';
   S.arState = ok ? 'AVAILABLE' : 'UNAVAILABLE';
 })();
 
+/* GL helpers */
+function xrSh(gl,t,s){var o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o;}
+function m4i(){var m=new Float32Array(16);m[0]=m[5]=m[10]=m[15]=1;return m;}
+function m4mul(a,b){var o=new Float32Array(16);for(var i=0;i<4;i++)for(var j=0;j<4;j++){var s=0;for(var k=0;k<4;k++)s+=a[j+k*4]*b[i*4+k];o[i*4+j]=s;}return o;}
+function m4t(x,y,z){var m=m4i();m[12]=x;m[13]=y;m[14]=z;return m;}
+function m4s(x,y,z){var m=m4i();m[0]=x;m[5]=y;m[10]=z;return m;}
+
+function initXRGL(gl){
+  var vs=xrSh(gl,gl.VERTEX_SHADER,'attribute vec3 aP;attribute vec2 aU;uniform mat4 uM;varying vec2 vU;void main(){vU=aU;gl_Position=uM*vec4(aP,1.);}');
+  var fs=xrSh(gl,gl.FRAGMENT_SHADER,'precision mediump float;varying vec2 vU;uniform sampler2D uT;void main(){gl_FragColor=texture2D(uT,vU);}');
+  xrProg=gl.createProgram();gl.attachShader(xrProg,vs);gl.attachShader(xrProg,fs);gl.linkProgram(xrProg);
+  xrProg.aP=gl.getAttribLocation(xrProg,'aP');
+  xrProg.aU=gl.getAttribLocation(xrProg,'aU');
+  xrProg.uM=gl.getUniformLocation(xrProg,'uM');
+  xrProg.uT=gl.getUniformLocation(xrProg,'uT');
+  var v=new Float32Array([-.5,-.5,0,0,1, .5,-.5,0,1,1, .5,.5,0,1,0, -.5,.5,0,0,0]);
+  var idx=new Uint16Array([0,1,2,0,2,3]);
+  xrVBO=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,xrVBO);gl.bufferData(gl.ARRAY_BUFFER,v,gl.STATIC_DRAW);
+  xrIBO=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,xrIBO);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
+  xrTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,xrTex);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  gl.useProgram(xrProg);gl.uniform1i(xrProg.uT,0);
+}
+
 async function enterAR(){
   if(S.arState==='UNAVAILABLE'){ showHint('AR NOT SUPPORTED ON THIS DEVICE',4); return; }
   if(xrSession){ xrSession.end(); return; }
   try{
     xrSession = await navigator.xr.requestSession('immersive-ar',{
       requiredFeatures:['local'],
-      optionalFeatures:['dom-overlay'],
-      domOverlay:{root:document.body},
+      optionalFeatures:['local-floor'],
     });
     S.arState='ACTIVE';
     showHint('AR ACTIVE  ·  RIGHT TRIGGER = ZOOM  ·  A = CYCLE ZOOM',5);
-    var gl = document.createElement('canvas').getContext('webgl',{xrCompatible:true});
-    xrSession.updateRenderState({baseLayer:new XRWebGLLayer(xrSession,gl)});
-    var ref = await xrSession.requestReferenceSpace('local');
+
+    xrGL = document.createElement('canvas').getContext('webgl',{xrCompatible:true,alpha:true,premultipliedAlpha:true});
+    xrLayer = new XRWebGLLayer(xrSession, xrGL, {alpha:true});
+    xrSession.updateRenderState({baseLayer:xrLayer});
+    try{ xrRef = await xrSession.requestReferenceSpace('local-floor'); }
+    catch(_){ xrRef = await xrSession.requestReferenceSpace('local'); }
+    initXRGL(xrGL);
+
     var prevTrig=false, prevA=false;
     function xrFrame(t,frame){
       if(!xrSession) return;
       xrSession.requestAnimationFrame(xrFrame);
+
+      /* draw HUD to 2D canvas (same as normal frame) */
+      drawFrame(t);
+
+      /* upload canvas as texture + render head-locked quad */
+      var pose = frame.getViewerPose(xrRef);
+      if(pose){
+        var gl=xrGL;
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D,xrTex);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cv);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER,xrLayer.framebuffer);
+        gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+        gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(xrProg);
+        gl.bindBuffer(gl.ARRAY_BUFFER,xrVBO);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,xrIBO);
+        gl.enableVertexAttribArray(xrProg.aP);
+        gl.vertexAttribPointer(xrProg.aP,3,gl.FLOAT,false,20,0);
+        gl.enableVertexAttribArray(xrProg.aU);
+        gl.vertexAttribPointer(xrProg.aU,2,gl.FLOAT,false,20,12);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D,xrTex);
+
+        var om=m4mul(m4t(0,-0.08,-1.1),m4s(1.4,0.78,1));
+        var world=m4mul(pose.transform.matrix,om);
+
+        for(var vi=0;vi<pose.views.length;vi++){
+          var view=pose.views[vi], vp=xrLayer.getViewport(view);
+          gl.viewport(vp.x,vp.y,vp.width,vp.height);
+          var mvp=m4mul(view.projectionMatrix,m4mul(view.transform.inverse.matrix,world));
+          gl.uniformMatrix4fv(xrProg.uM,false,mvp);
+          gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+        }
+      }
+
+      /* controller input (unchanged) */
       var trig=false, btnA=false;
       for(var src of xrSession.inputSources){
         if(!src.gamepad) continue;
@@ -285,12 +347,15 @@ async function enterAR(){
       if(trig&&!prevTrig) toggleZoom();
       if(btnA&&!prevA&&zoomActive){
         zoomIdx=(zoomIdx+1)%ZOOM_LEVELS.length;
-        if(zoomIdx===0){ zoomActive=false; if(zoomRAF){cancelAnimationFrame(zoomRAF);zoomRAF=null;} }
+        if(zoomIdx===0) zoomActive=false;
       }
       prevTrig=trig; prevA=btnA;
     }
     xrSession.requestAnimationFrame(xrFrame);
-    xrSession.addEventListener('end',function(){ xrSession=null; S.arState='AVAILABLE'; showHint('AR SESSION ENDED',3); });
+    xrSession.addEventListener('end',function(){
+      xrSession=null; xrGL=null; xrLayer=null; xrRef=null;
+      S.arState='AVAILABLE'; showHint('AR SESSION ENDED',3);
+    });
   } catch(e){ showHint('AR ERROR: '+e.message,4); S.arState='AVAILABLE'; }
 }
 
@@ -299,7 +364,6 @@ async function enterAR(){
 // ═══════════════════════════════════════════════════════════════
 var RCHARS='01アイウカキサシスタチツテト∆∇∞≈≡▓▒░⌬⌁⌖⊕⊗';
 
-// rain cols (sides)
 var rainCols=[];
 function initRain(){
   rainCols=[];
@@ -312,7 +376,6 @@ function initRain(){
   }
 }
 
-// side data streams
 var streams=[];
 function initStreams(){
   streams=[];
@@ -323,7 +386,6 @@ function initStreams(){
   }
 }
 
-// hex grid
 var hexes=[];
 function buildHexes(){
   hexes=[];
@@ -336,27 +398,25 @@ function buildHexes(){
   }
 }
 
-// pulse rings
 var pulses=[], pulseTimer=0;
-// scan
 var scanY=0;
-// glitch slices
 var glitches=[], glitchTimer=0;
 function spawnGlitch(){ for(var i=0;i<1+Math.floor(Math.random()*3);i++) glitches.push({y:Math.random()*H,h:1+Math.random()*10,dx:(Math.random()-.5)*30,life:1,dur:.06+Math.random()*.1}); }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN LOOP
+// MAIN DRAW  (called from both normal rAF and XR rAF)
 // ═══════════════════════════════════════════════════════════════
 var lastT=performance.now();
-function frame(now){
-  requestAnimationFrame(frame);
+
+function drawFrame(now){
   if(!W||!H) return;
   var dt=Math.min((now-lastT)/1000,.05); lastT=now; var t=now*.001;
 
-  // rebuild effect arrays after resize (never mid-frame)
   if(_needRebuild){ _needRebuild=false; buildHexes(); initRain(); initStreams(); }
 
-  // reset button registry each frame
+  /* update zoom offscreen canvas (works in both normal + XR mode) */
+  renderZoomFrame();
+
   canvasButtons=[];
 
   ctx.save();
@@ -471,35 +531,28 @@ function frame(now){
   // ── reticle ──
   drawReticle(cx,cy,t);
 
-  // ── zoom window (drawn from offscreen canvas) ──
+  // ── FIX 1: BIGGER zoom window (was 300×225, now 480×360) ──
   if(zoomActive && zoomStream){
-    var zw=300, zh=225, zx=cx-zw/2, zy=cy-zh/2-20;
+    var zw=480, zh=360, zx=cx-zw/2, zy=cy-zh/2-20;
     ctx.save();
-    // panel bg
     ctx.fillStyle='rgba(0,0,0,.85)'; ctx.fillRect(zx,zy,zw,zh);
-    // draw zoom frame
     ctx.drawImage(zco, zx,zy,zw,zh);
-    // border
     ctx.strokeStyle=C(); ctx.lineWidth=1.2;
     ctx.shadowColor=C(); ctx.shadowBlur=10;
     ctx.strokeRect(zx,zy,zw,zh); ctx.shadowBlur=0;
-    // corner brackets
     var bs=14;
     [[zx,zy,1,1],[zx+zw,zy,-1,1],[zx,zy+zh,1,-1],[zx+zw,zy+zh,-1,-1]].forEach(function(b){
       ctx.beginPath(); ctx.moveTo(b[0]+b[2]*bs,b[1]); ctx.lineTo(b[0],b[1]); ctx.lineTo(b[0],b[1]+b[3]*bs); ctx.stroke();
     });
-    // crosshair
     ctx.strokeStyle=rc(.25); ctx.lineWidth=.7; ctx.shadowBlur=0;
     ctx.beginPath(); ctx.moveTo(zx+zw/2-20,zy+zh/2); ctx.lineTo(zx+zw/2+20,zy+zh/2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(zx+zw/2,zy+zh/2-20); ctx.lineTo(zx+zw/2,zy+zh/2+20); ctx.stroke();
-    // zoom level label
     ctx.font='700 12px "Bebas Neue",sans-serif'; ctx.fillStyle=C();
     ctx.shadowColor=C(); ctx.shadowBlur=6;
     ctx.textAlign='center'; ctx.textBaseline='top';
     ctx.fillText('ZOOM  '+ZOOM_LEVELS[zoomIdx]+'×', cx, zy+zh+5);
     ctx.shadowBlur=0;
     ctx.restore();
-    // register cycle button on zoom window
     regBtn('zoom', zx, zy, zw, zh);
   }
 
@@ -508,7 +561,7 @@ function frame(now){
   drawBR();
   drawBL();
 
-  // ── bottom bar: AR button + zoom button + theme swatches ──
+  // ── bottom bar ──
   drawBottomBar();
 
   // ── hint ──
@@ -528,15 +581,20 @@ function frame(now){
     ctx.restore();
   }
 
-  ctx.restore(); // DPR scale
+  ctx.restore();
+}
+
+// normal (non-XR) animation loop
+function frame(now){
+  requestAnimationFrame(frame);
+  drawFrame(now);
 }
 requestAnimationFrame(frame);
 
-// show controller hint shortly after load
 setTimeout(function(){ showHint('QUEST 3 ·  RIGHT TRIGGER = ZOOM  ·  A = CYCLE ZOOM LEVEL', 6); }, 1500);
 
 // ═══════════════════════════════════════════════════════════════
-// DRAW HELPERS
+// DRAW HELPERS  (all identical — zero changes below)
 // ═══════════════════════════════════════════════════════════════
 function hexPath(x,y,r){
   ctx.beginPath();
@@ -568,20 +626,16 @@ function drawCorners(){
 
 function drawReticle(cx,cy,t){
   ctx.save(); ctx.translate(cx,cy);
-  // outer slow pulse
   ctx.beginPath(); ctx.arc(0,0,22+Math.sin(t*.8)*.5,0,Math.PI*2);
   ctx.strokeStyle=rc(.18); ctx.lineWidth=.8; ctx.stroke();
-  // dashed spin ring
   ctx.save(); ctx.rotate(t*.15);
   ctx.beginPath(); ctx.arc(0,0,17,0,Math.PI*2);
   ctx.strokeStyle=rc(.22); ctx.lineWidth=.7; ctx.setLineDash([3,8]); ctx.stroke(); ctx.setLineDash([]);
   ctx.restore();
-  // cross gap lines
   ctx.strokeStyle=rc(.3); ctx.lineWidth=.8;
   [[0,-22,0,-9],[0,9,0,22],[-22,0,-9,0],[9,0,22,0]].forEach(function(l){
     ctx.beginPath(); ctx.moveTo(l[0],l[1]); ctx.lineTo(l[2],l[3]); ctx.stroke();
   });
-  // dot
   glow(6); ctx.beginPath(); ctx.arc(0,0,2.2,0,Math.PI*2);
   ctx.fillStyle=C(); ctx.fill(); noglow();
   ctx.restore();
@@ -590,18 +644,12 @@ function drawReticle(cx,cy,t){
 function drawTL(t){
   var x=22, y=22;
   ctx.save(); ctx.textBaseline='top';
-  // time
   glow(18); ctx.font='bold 52px "Bebas Neue",sans-serif'; ctx.fillStyle=C(); ctx.fillText(S.time,x,y); noglow();
   y+=54;
-  // date
   ctx.font='700 8px "Share Tech Mono",monospace'; ctx.fillStyle=rc(.45); ctx.fillText(S.date,x,y); y+=12;
-  // divider
   if(W>60){ var dg=ctx.createLinearGradient(x,0,x+140,0); dg.addColorStop(0,rc(.4)); dg.addColorStop(1,'transparent'); ctx.strokeStyle=dg; ctx.lineWidth=.8; ctx.beginPath(); ctx.moveTo(x,y+3); ctx.lineTo(x+140,y+3); ctx.stroke(); } y+=9;
-  // street
   if(S.street){ glow(5); ctx.font='700 10px "Share Tech Mono",monospace'; ctx.fillStyle=C(); ctx.fillText(S.street,x,y); noglow(); y+=13; }
-  // area
   if(S.area){ ctx.font='500 8px "Share Tech Mono",monospace'; ctx.fillStyle=rc(.4); ctx.fillText(S.area,x,y); y+=12; }
-  // gps status (if no location yet)
   if(!S.street&&!S.area){
     var gc=S.gps==='LOCKED'?'#39ff14':S.gps==='DENIED'?'#ff2d6b':'#ff9500';
     ctx.font='700 8px "Share Tech Mono",monospace'; ctx.fillStyle=gc;
@@ -644,7 +692,6 @@ function drawBL(){
 }
 
 function drawBottomBar(){
-  // layout: [AR BTN]  [ZOOM BTN]  [● ● ● ● ●]  all centred bottom
   var bh=22, by=H-50, pad=10;
   var arLabel = S.arState==='ACTIVE' ? '◈ EXIT AR' : S.arState==='UNAVAILABLE' ? '◈ AR N/A' : '◈ ENTER AR';
   var arAvail = S.arState!=='UNAVAILABLE';
@@ -652,7 +699,6 @@ function drawBottomBar(){
   ctx.save();
   ctx.font='700 8px "Share Tech Mono",monospace';
 
-  // measure items
   var arW  = ctx.measureText(arLabel).width + 24;
   var zmW  = ctx.measureText('◈ ZOOM').width + 24;
   var dotR = 7, dotGap = 18;
@@ -660,17 +706,14 @@ function drawBottomBar(){
   var totalW = arW + 12 + zmW + 20 + dotsW;
   var startX = W/2 - totalW/2;
 
-  // AR button
   var arx=startX, ary=by;
   drawCBtn(arLabel, arx, ary, arW, bh, 'ar', arAvail, S.arState==='ACTIVE');
   startX += arW+12;
 
-  // ZOOM button
   var zmx=startX, zmy=by;
   drawCBtn('◈ ZOOM', zmx, zmy, zmW, bh, 'zoom', true, zoomActive);
   startX += zmW+20;
 
-  // theme dots
   for(var ti=0;ti<THEMES.length;ti++){
     var tx=startX+ti*dotGap+dotR, ty=by+bh/2;
     var isActive=(ti===themeIdx);
@@ -691,23 +734,18 @@ function drawCBtn(label, x, y, w, h, id, enabled, active){
   var hov = mouseX>=x && mouseX<=x+w && mouseY>=y && mouseY<=y+h;
   ctx.save();
   ctx.globalAlpha = enabled ? 1 : .35;
-  // bg
   ctx.fillStyle = active ? rc(.12) : hov ? rc(.08) : 'rgba(0,4,12,.75)';
   ctx.fillRect(x,y,w,h);
-  // border
   ctx.strokeStyle = active ? C() : rc(.4);
   ctx.lineWidth = active||hov ? 1.2 : .8;
   if(active||hov){ ctx.shadowColor=C(); ctx.shadowBlur=active?10:5; }
   ctx.strokeRect(x,y,w,h);
   ctx.shadowBlur=0;
-  // clip corners (polygon effect)
   var clip=5;
   ctx.clearRect(x,y,clip,clip); ctx.clearRect(x+w-clip,y,clip,clip);
   ctx.clearRect(x,y+h-clip,clip,clip); ctx.clearRect(x+w-clip,y+h-clip,clip,clip);
-  // re-stroke border to clean corners
   ctx.strokeStyle = active ? C() : rc(.4);
   ctx.strokeRect(x,y,w,h);
-  // text
   ctx.font='700 8px "Share Tech Mono",monospace';
   ctx.fillStyle = active ? C() : hov ? C() : rc(.7);
   ctx.textAlign='center'; ctx.textBaseline='middle';
