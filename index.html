@@ -240,6 +240,7 @@ function renderZoomFrame(){
 // ═══════════════════════════════════════════════════════════════
 var xrSession=null, xrGL=null, xrLayer=null, xrRef=null;
 var xrProg=null, xrVBO=null, xrIBO=null, xrTex=null;
+var inXR=false;
 
 S.arState='CHECK';
 (async function(){
@@ -284,6 +285,8 @@ async function enterAR(){
       optionalFeatures:['local-floor'],
     });
     S.arState='ACTIVE';
+    inXR=true;
+    document.body.style.background='transparent';
     showHint('AR ACTIVE  ·  RIGHT TRIGGER = ZOOM  ·  A = CYCLE ZOOM',5);
 
     xrGL = document.createElement('canvas').getContext('webgl',{xrCompatible:true,alpha:true,premultipliedAlpha:true});
@@ -354,6 +357,8 @@ async function enterAR(){
     xrSession.requestAnimationFrame(xrFrame);
     xrSession.addEventListener('end',function(){
       xrSession=null; xrGL=null; xrLayer=null; xrRef=null;
+      inXR=false;
+      document.body.style.background='#000';
       S.arState='AVAILABLE'; showHint('AR SESSION ENDED',3);
     });
   } catch(e){ showHint('AR ERROR: '+e.message,4); S.arState='AVAILABLE'; }
@@ -425,8 +430,8 @@ function drawFrame(now){
 
   var cx=W/2, cy=H/2;
 
-  // ── background ──
-  ctx.fillStyle='#000305'; ctx.fillRect(0,0,W,H);
+  // ── background (skip in AR for passthrough transparency) ──
+  if(!inXR){ ctx.fillStyle='#000305'; ctx.fillRect(0,0,W,H); }
 
   // ── hex grid ──
   ctx.save();
@@ -489,10 +494,12 @@ function drawFrame(now){
     ctx.restore();
   }
 
-  // ── CRT scanlines ──
-  ctx.save(); ctx.fillStyle='rgba(0,0,0,.055)';
-  for(var y=0;y<H;y+=4) ctx.fillRect(0,y,W,2);
-  ctx.restore();
+  // ── CRT scanlines (skip in AR — opaque black) ──
+  if(!inXR){
+    ctx.save(); ctx.fillStyle='rgba(0,0,0,.055)';
+    for(var y=0;y<H;y+=4) ctx.fillRect(0,y,W,2);
+    ctx.restore();
+  }
 
   // ── glitch slices ──
   glitchTimer-=dt; if(glitchTimer<0){ glitchTimer=2.5+Math.random()*4; spawnGlitch(); }
@@ -504,8 +511,8 @@ function drawFrame(now){
   }
   ctx.restore();
 
-  // ── vignette ──
-  if(W>0&&H>0){
+  // ── vignette (skip in AR — opaque black edges) ──
+  if(!inXR && W>0&&H>0){
     ctx.save();
     var vr0=Math.max(1,H*.2), vr1=Math.max(vr0+2,H*.75);
     var vg=ctx.createRadialGradient(cx,cy,vr0,cx,cy,vr1);
@@ -514,8 +521,8 @@ function drawFrame(now){
     ctx.restore();
   }
 
-  // ── chromatic edge ──
-  if(H>0){
+  // ── chromatic edge (skip in AR) ──
+  if(!inXR && H>0){
     ctx.save(); ctx.globalCompositeOperation='screen';
     var er0=Math.max(1,H*.35), er1=Math.max(er0+2,H*.55);
     var eg=ctx.createRadialGradient(cx,cy,er0,cx,cy,er1);
@@ -587,6 +594,7 @@ function drawFrame(now){
 // normal (non-XR) animation loop
 function frame(now){
   requestAnimationFrame(frame);
+  if(inXR) return;
   drawFrame(now);
 }
 requestAnimationFrame(frame);
