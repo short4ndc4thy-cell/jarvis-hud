@@ -11,11 +11,22 @@ html,body{width:100vw;height:100vh;overflow:hidden;background:#000;font-family:'
 canvas{position:fixed;top:0;left:0;width:100%;height:100%;}
 #c{z-index:1;}
 
-/* only DOM we allow: theme picker + zoom overlay (needs video element) */
+/* only DOM we allow: theme picker + AR button + zoom overlay (needs video element) */
 #themer{
-  position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
   z-index:100;display:flex;gap:10px;pointer-events:auto;
 }
+#arBtn{
+  position:fixed;bottom:46px;left:50%;transform:translateX(-50%);
+  z-index:100;pointer-events:auto;
+  background:rgba(0,4,12,.8);border:1px solid rgba(0,229,255,.4);
+  color:#00e5ff;font-family:'Share Tech Mono',monospace;font-size:.58rem;
+  font-weight:700;letter-spacing:.2em;padding:.32rem 1rem;cursor:pointer;
+  text-transform:uppercase;clip-path:polygon(7px 0%,100% 0%,calc(100% - 7px) 100%,0% 100%);
+  transition:background .12s,box-shadow .12s;white-space:nowrap;
+}
+#arBtn:hover{background:rgba(0,229,255,.1);box-shadow:0 0 10px rgba(0,229,255,.4);}
+#arBtn.active{background:rgba(0,229,255,.08);box-shadow:0 0 16px rgba(0,229,255,.6);}
 .dot{
   width:13px;height:13px;border-radius:50%;cursor:pointer;
   border:2px solid rgba(255,255,255,.15);transition:transform .15s,border-color .15s,box-shadow .15s;
@@ -50,6 +61,9 @@ canvas{position:fixed;top:0;left:0;width:100%;height:100%;}
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<!-- AR entry button -->
+<button id="arBtn" onclick="enterAR()">◈ ENTER AR</button>
 
 <!-- theme picker (only DOM needed for pointer events) -->
 <div id="themer">
@@ -241,6 +255,72 @@ function drawZoomNoFeed(){
 window.addEventListener('keydown',function(e){if(e.key==='z'||e.key==='Z')toggleZoom();});
 
 // ═══════════════════════════════════════════════════════════
+// WebXR — immersive-ar, dom-overlay
+// ═══════════════════════════════════════════════════════════
+var xrSession=null;
+var arBtn=document.getElementById('arBtn');
+
+async function enterAR(){
+  if(xrSession){xrSession.end();return;}
+  if(!navigator.xr){showHint('WEBXR NOT AVAILABLE');return;}
+  var ok=await navigator.xr.isSessionSupported('immersive-ar').catch(function(){return false;});
+  if(!ok){showHint('IMMERSIVE-AR NOT SUPPORTED');return;}
+  try{
+    xrSession=await navigator.xr.requestSession('immersive-ar',{
+      requiredFeatures:['local'],
+      optionalFeatures:['dom-overlay'],
+      domOverlay:{root:document.body},
+    });
+    arBtn.textContent='◈ EXIT AR';arBtn.classList.add('active');
+    showHint('AR ACTIVE · RIGHT TRIGGER = ZOOM · A = CYCLE');
+    // minimal XR loop — heading from pose, gamepad polling
+    var gl=document.createElement('canvas').getContext('webgl',{xrCompatible:true});
+    xrSession.updateRenderState({baseLayer:new XRWebGLLayer(xrSession,gl)});
+    var ref=await xrSession.requestReferenceSpace('local');
+    var prevTrig=false,prevA=false;
+    function xrFrame(t,frame){
+      if(!xrSession)return;
+      xrSession.requestAnimationFrame(xrFrame);
+      // gamepad — right controller: button[0]=trigger, button[4]=A
+      var trig=false,btnA=false;
+      for(var src of xrSession.inputSources){
+        if(!src.gamepad)continue;
+        if(src.gamepad.buttons[0]&&src.gamepad.buttons[0].pressed)trig=true;
+        if(src.gamepad.buttons[4]&&src.gamepad.buttons[4].pressed)btnA=true;
+        // also check button[2] as some firmwares map A there
+        if(src.gamepad.buttons[2]&&src.gamepad.buttons[2].pressed)btnA=true;
+      }
+      if(trig&&!prevTrig)toggleZoom();
+      if(btnA&&!prevA&&zoomActive){
+        zoomIdx=(zoomIdx+1)%ZOOM_LEVELS.length;
+        zlbl.textContent='ZOOM '+ZOOM_LEVELS[zoomIdx]+'×';
+      }
+      prevTrig=trig;prevA=btnA;
+    }
+    xrSession.requestAnimationFrame(xrFrame);
+    xrSession.addEventListener('end',function(){
+      xrSession=null;arBtn.textContent='◈ ENTER AR';arBtn.classList.remove('active');
+      showHint('AR SESSION ENDED');
+    });
+  }catch(e){showHint('AR ERROR: '+e.message);}
+}
+
+// check AR support on load and update button label
+(async function(){
+  if(!navigator.xr){arBtn.textContent='◈ AR UNAVAILABLE';arBtn.style.opacity='.4';arBtn.style.pointerEvents='none';return;}
+  var ok=await navigator.xr.isSessionSupported('immersive-ar').catch(function(){return false;});
+  if(!ok){arBtn.textContent='◈ AR NOT SUPPORTED';arBtn.style.opacity='.4';arBtn.style.pointerEvents='none';}
+})();
+
+// ═══════════════════════════════════════════════════════════
+// HUD HINT (drawn on canvas, auto-fades)
+// ═══════════════════════════════════════════════════════════
+var hintText='',hintAlpha=0,hintTimer=0;
+function showHint(msg,dur){hintText=msg;hintAlpha=1;hintTimer=dur||3.5;}
+// show controller hint on load
+setTimeout(function(){showHint('QUEST 3 · RIGHT TRIGGER = ZOOM/CYCLE · A = NEXT ZOOM LEVEL',5);},1200);
+
+// ═══════════════════════════════════════════════════════════
 // VISUAL EFFECT STATE
 // ═══════════════════════════════════════════════════════════
 
@@ -429,6 +509,23 @@ function frame(now){
   drawTL(ctx,t);   // clock + date + street
   drawBR(ctx,t);   // weather
   drawBL(ctx,t);   // AQI + pollen
+
+  // ── hint message ──
+  if(hintAlpha>0){
+    hintTimer-=dt; if(hintTimer<0)hintTimer=0;
+    hintAlpha=hintTimer>1?1:hintTimer;
+    ctx.save();
+    ctx.font='700 8px "Share Tech Mono",monospace';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    var hw=ctx.measureText(hintText).width+22;
+    var hbx=cx,hby=cy+H*.28;
+    ctx.globalAlpha=hintAlpha;
+    ctx.fillStyle='rgba(0,4,12,.75)';ctx.fillRect(hbx-hw/2,hby-9,hw,18);
+    ctx.strokeStyle=rc(.45);ctx.lineWidth=.8;ctx.strokeRect(hbx-hw/2,hby-9,hw,18);
+    ctx.fillStyle=C();ctx.shadowColor=C();ctx.shadowBlur=7;
+    ctx.fillText(hintText,hbx,hby);
+    ctx.restore();
+  }
 
   ctx.restore();
 }
